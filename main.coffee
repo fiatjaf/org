@@ -1,80 +1,138 @@
-React = require 'react'
-Yaml  = require 'js-yaml'
+React          = require 'react'
+YAML           = {}
+YAML.parse     = require('js-yaml').safeLoad
+YAML.stringify = require('json2yaml').stringify
+Store          = require './store.coffee'
 
-{div, span, p,
- small, i, a, button,
- h1, h2, h3,
- form, input, textarea, select} = React.DOM
+store = new Store
+
+{div, span, pre,
+ small, i, p, a, button,
+ h1, h2, h3, h4,
+ form, legend, fieldset, input, textarea, select
+ ul, li} = React.DOM
 
 Board = React.createClass
   getInitialState: ->
-    first = (new Date()).toISOString()
-    docs = {}
-    docs[first] = {
-      _id: first
-      data: {pli: 'plo', hu: 'aks'},
-      style:
-        position: 'absolute'
-        left: 0
-        top: 0
-        width: 200
-        height: 100
-        border: '2px solid red'
-    }
-    return docs: docs
+    types: {}
+    editingDoc: null
 
-  dragOver: (e) ->
+  componentDidMount: ->
+    @fetchDocs()
+
+  fetchDocs: ->
+    store.listTypes().then (types) =>
+      @setState types: types
+
+  handleClickDoc: (docid, e) ->
     e.preventDefault()
+    store.get(docid).then (doc) =>
+      @setState editingDoc: doc
 
-  drop: (e) ->
+  handleCancelEdit: (e) ->
     e.preventDefault()
-    offset = e.dataTransfer.getData('offset').split(',')
-    docid = e.dataTransfer.getData('docid')
-    docs = @state.docs
-    doc = docs[docid]
-
-    w = @getDOMNode().offsetWidth
-    h = @getDOMNode().offsetHeight
-
-    left = (e.clientX + parseInt(offset[0],10))
-    top = (e.clientY + parseInt(offset[1],10))
-
-    if left + doc.style.width > w
-      doc.style.left = (w - doc.style.width)
-    else if left < 0
-      doc.style.left = 0
-    else
-      doc.style.left = left
-
-    if top + doc.style.height > h
-      doc.style.top = (h - doc.style.height)
-    else if top < 0
-      doc.style.top = 0
-    else
-      doc.style.top = top
-
-    @setState docs: docs
+    @setState editingDoc: null
 
   render: ->
     (div
       id: 'board'
-      onDragOver: @dragOver
-      onDrop: @drop
-    , (Doc(doc: doc, key: id) for id, doc of @state.docs))
+      style:
+        width: 310 * Object.keys(@state.types).length + 308
+    ,
+      (Editing
+        doc: @state.editingDoc
+        onCancel: @handleCancelEdit
+        afterSave: @fetchDocs
+        afterDelete: @fetchDocs
+      )
+      (List {key: listName},
+        (Doc
+          onClickEdit: @handleClickDoc.bind @, doc._id
+          doc: doc,
+          key: doc._id
+        ) for doc in docs
+      ) for listName, docs of @state.types
+    )
+
+List = React.createClass
+  render: ->
+    (div className: 'list',
+      (h3 {}, @props.key)
+      @props.children
+    )
 
 Doc = React.createClass
-  dragStart: (e) ->
-    style = window.getComputedStyle e.target, null
-    offset = (parseInt(style.getPropertyValue("left"),10) - e.clientX) + ',' + (parseInt(style.getPropertyValue("top"),10) - e.clientY)
-    e.dataTransfer.setData 'offset', offset
-    e.dataTransfer.setData 'docid', @props.doc._id
+  render: ->
+    content = YAML.stringify @props.doc.data
+    (div className: 'doc',
+      (h4 {}, @props.doc._id)
+      (pre
+        onClick: @props.onClickEdit
+      , content)
+    )
+
+Editing = React.createClass
+  getInitialState: ->
+    yamlString: ''
+
+  componentWillReceiveProps: (nextProps) ->
+    if not nextProps.doc
+      doc = {data: {type: 'item'}}
+    else
+      doc = nextProps.doc
+
+    @setState yamlString: YAML.stringify doc.data
+
+  save: (e) ->
+    e.preventDefault()
+    doc = @props.doc or {}
+    data = YAML.parse @state.yamlString
+    doc.data = data
+    store.save(doc).then => @props.afterSave()
+
+  delete: (e) ->
+    e.preventDefault()
+    if confirm 'Are you sure you want to delete ' + @props.docs._id + '?'
+      store.delete(doc).then => @props.afterDelete()
+
+  handleChange: (e) ->
+    @setState yamlString: e.target.value
 
   render: ->
-    content = Yaml.safeDump @props.doc.data
-    (div
-      style: @props.doc.style
-      draggable: true
-      onDragStart: @dragStart
-    , content)
+    (form className: 'editing pure-form pure-form-stacked',
+      (fieldset {},
+        (h3 {}, if @props.doc then @props.doc._id else 'new card')
+        (textarea
+          value: @state.yamlString
+          onChange: @handleChange
+        )
+        (button
+          className: 'pure-button cancel'
+          onClick: @props.onCancel
+        , 'Cancel')
+        (button
+          className: 'pure-button delete'
+          onClick: @delete
+        , 'Delete') if @props.doc
+        (button
+          className: 'pure-button save'
+          onClick: @save
+        , 'Save')
+      )
+    )
 
-React.renderComponent Board(), document.body
+Main = React.createClass
+  reset: (e) ->
+    e.preventDefault()
+    store.reset().then(location.reload)
+
+  render: ->
+    (div {id: 'main'},
+      (button
+        className: 'pure-button'
+        onClick: @reset
+      , 'RESET')
+      Board()
+    )
+
+React.renderComponent Main(), document.body

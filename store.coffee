@@ -1,5 +1,6 @@
-PouchDB = require 'pouchdb'
+PouchDB = require './pouchdb'
 Promise = require 'lie'
+cuid = require 'cuid'
 
 class Store
   constructor: (name='main') ->
@@ -8,14 +9,30 @@ class Store
       _id: '_design/refs'
       views:
         'refs':
-          map: (doc) ->
-            for k, v of doc
-              if typeof v is 'string' and v.slice(0, 4) == '_id-'
-                emit [v.slice(4), doc.type, k]
+          map: ((doc) ->
+            for k, rfid of doc.data
+              if k[0] == '@'
+                emit [rfid, doc.data.type, k]
+          ).toString()
+          reduce: '_count'
+
+    @pouch.put
+      _id: '_design/types'
+      views:
+        'types':
+          map: ((doc) -> emit [doc.data.type, doc._id]).toString()
+          reduce: '_count'
 
   save: (doc) ->
-    doc._id = (new Date()).toISOString()
+    doc._id = cuid() if not doc._id
+    if doc._rev
+      doc.edited = (new Date()).toISOString()
+    else
+      doc.created = (new Date()).toISOString()
     @pouch.put doc
+
+  delete: (doc) ->
+    @pouch.remove doc
 
   get: (id) ->
     return new Promise (resolve, reject) =>
@@ -23,17 +40,16 @@ class Store
       @pouch.get(id).then (doc) =>
 
         # get docs referenced by this
-        for k, v of doc
-          rids = []
-          if typeof v is 'string' and v.slice(0, 4) == '_id-'
-            rids.push v
-
+        for k, v of doc.data
+          rids = {}
+          if k[0] == '@'
+            rids[v.slice(1 + v.indexOf '-')] = k
         rfd = @pouch.allDocs(
           include_docs: true
-          keys: rids
+          keys: Object.keys rids
         ).then (res) =>
           for row in res.rows
-            doc[k] = row.doc
+            doc.data[rids[row.doc._id]] = row.doc.data
 
         promises.push rfd
 
@@ -43,10 +59,11 @@ class Store
           include_docs: true
           startkey: [id, {}]
           endkey: [id]
+          reduce: false
         ).then (res) =>
           for row in res.rows
-            doc[row.key[1]] = doc[row.key[1]] or []
-            doc[row.key[1]].push row.doc
+            doc.data[row.key[1]] = doc[row.key[1]] or []
+            doc.data[row.key[1]].push row.doc.data
 
         promises.push rfr
 
@@ -54,20 +71,30 @@ class Store
         Promise.all(promises).then ->
           resolve(doc)
 
-  addIndex: (name, opts) ->
-    _id = "_design/#{name}"
-    @pouch.get(_id).then (doc) =>
-      ddoc = doc or {_id: _id}
-      ddoc.views = ddoc.views or {name: {}}
-      ddoc.views[name].map = opts.map
-      ddoc.views[name].reduce = opts.reduce if opts.reduce
-      @pouch.put ddoc
+  listTypes: ->
+    return new Promise (resolve, reject) =>
+      @pouch.query('types',
+        include_docs: true
+        descending: true
+        reduce: false
+      ).then (res) ->
+        types = {}
+        for row in res.rows
+          if not types[row.key[0]]
+            types[row.key[0]] = []
+          types[row.key[0]].push row.doc
+        resolve types
 
+  addIndex: (name, map, reduce) ->
+    views = {}
+    views[name] = {
+      map: map.toString()
+    }
+    views[name].reduce = reduce.toString() if reduce
 
+    @pouch.put({
+      _id: "_design/#{name}"
+      views: views
+    })
 
-
-
-
-
-
-
+module.exports = Store
