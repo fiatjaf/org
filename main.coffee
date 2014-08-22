@@ -26,12 +26,18 @@ Board = React.createClass
 
   handleClickDoc: (docid, e) ->
     e.preventDefault()
-    store.get(docid).then (doc) =>
-      @setState editingDoc: doc
+    store.get(docid).then (doc, referred, referring) =>
+      @setState
+        editingDoc: doc
+        editingReferred: referred
+        editingReferring: referring
 
   handleCancelEdit: (e) ->
     e.preventDefault()
-    @setState editingDoc: null
+    @setState
+      editingDoc: null
+      editingReferred: null
+      editingReferring: null
 
   render: ->
     (div
@@ -41,6 +47,8 @@ Board = React.createClass
     ,
       (Editing
         doc: @state.editingDoc
+        referred: @state.editingReferred
+        referring: @state.editingReferring
         onCancel: @handleCancelEdit
         afterSave: @fetchDocs
         afterDelete: @fetchDocs
@@ -63,12 +71,12 @@ List = React.createClass
 
 Doc = React.createClass
   render: ->
-    content = YAML.stringify @props.doc.data
+    data = YAML.stringify @props.doc.data
     (div className: 'doc',
       (h4 {}, @props.doc._id)
       (pre
         onClick: @props.onClickEdit
-      , content)
+      , data)
     )
 
 Editing = React.createClass
@@ -100,12 +108,20 @@ Editing = React.createClass
 
   render: ->
     (form className: 'editing pure-form pure-form-stacked',
-      (fieldset {},
+      (fieldset className: 'main',
         (h3 {}, if @props.doc then @props.doc._id else 'new card')
         (textarea
           value: @state.yamlString
           onChange: @handleChange
         )
+      )
+      (fieldset className: 'referred',
+        (pre {}, YAML.stringify @props.referred)
+      ) if @props.referred
+      (fieldset className: 'referring',
+        (pre {}, YAML.stringify @props.referring)
+      ) if @props.referring
+      (fieldset {},
         (button
           className: 'pure-button cancel'
           onClick: @props.onCancel
