@@ -11,26 +11,28 @@ html, body, #main {
   border-radius: 4px;
 }
 
-h3 { margin: -3px 0 8px 0; }
+h3 { margin: -3px 0 8px 0 !important; }
 
 #board {
-  width: 98%;
+  min-width: 97%;
   min-height: 98%;
   height: auto;
   overflow: auto;
   margin: 1%;
-  padding: 1%;
+  padding: 20px;
   background: #4C7F5D;
   color: white;
 }
 
 .editing {
-  width: 300px;
   float: left;
   background: rgba(74, 179, 250, 0.7);
-  padding: 10px 15px;
   margin-right: 8px;
 
+  fieldset {
+    width: 277px;
+    padding: 10px 15px !important;
+  }
   h3 { color: white !important; }
   textarea {
     font-family: monospace;
@@ -46,7 +48,7 @@ h3 { margin: -3px 0 8px 0; }
 }
 
 .list {
-  padding: 6px;
+  padding: 10px 6px;
   float: left;
   min-width: 302px;
   margin: auto 4px;
@@ -76,9 +78,12 @@ h3 { margin: -3px 0 8px 0; }
 
     &:hover {
       background-color: rgba(255,255,255,1);
-      transform: rotate(-1deg);
-      -webkit-transform: rotate(-2deg);
-      -ms-transform: rotate(-2deg);
+      transform: rotate(1deg);
+      -webkit-transform: rotate(1deg);
+      -ms-transform: rotate(1deg);
+      transform-origin: 90% 90%;
+      -webkit-transform-origin: 90% 90%;
+      -ms-transform-origin: 90% 90%;
       box-shadow: 5px 4px 4px 0px rgba(0,0,0,0.8);
     }
   }

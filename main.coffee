@@ -1,7 +1,7 @@
 React          = require 'react'
 YAML           = {}
 YAML.parse     = require('js-yaml').safeLoad
-YAML.stringify = require('json2yaml').stringify
+YAML.stringify = require('prettyaml').stringify
 Store          = require './store.coffee'
 
 store = new Store
@@ -37,7 +37,7 @@ Board = React.createClass
     (div
       id: 'board'
       style:
-        width: 310 * Object.keys(@state.types).length + 308
+        width: 310 * Object.keys(@state.types).length + 400
     ,
       (Editing
         doc: @state.editingDoc
