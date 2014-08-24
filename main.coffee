@@ -24,9 +24,9 @@ Board = React.createClass
     store.listTypes().then (types) =>
       @setState types: types
 
-  handleClickDoc: (docid, e) ->
-    e.preventDefault()
-    store.get(docid).then (doc, referred, referring) =>
+  handleClickDoc: (docid) ->
+    store.getWithRefs(docid).then (result) =>
+      {doc, referred, referring} = result
       @setState
         editingDoc: doc
         editingReferred: referred
@@ -38,6 +38,11 @@ Board = React.createClass
       editingDoc: null
       editingReferred: null
       editingReferring: null
+
+  handleDocDropped: (listIdentifier, e) ->
+    store.get(e.relatedTarget.dataset.id).then (draggedDoc) =>
+      draggedDoc.data.type = listIdentifier
+      store.save(draggedDoc).then => @fetchDocs()
 
   render: ->
     (div
@@ -53,7 +58,10 @@ Board = React.createClass
         afterSave: @fetchDocs
         afterDelete: @fetchDocs
       )
-      (List {key: listName},
+      (List
+        key: listName
+        onDropDoc: @handleDocDropped.bind @, listName
+      ,
         (Doc
           onClickEdit: @handleClickDoc.bind @, doc._id
           doc: doc,
@@ -63,25 +71,95 @@ Board = React.createClass
     )
 
 List = React.createClass
+  componentDidMount: ->
+    interact(@getDOMNode())
+      .dropzone(true)
+      .accept('.doc pre')
+      .on('dragenter', (e) ->
+        #t = e.target
+        #if e.target != e.relatedTarget.parentElement.parentElement
+        #  draggieSize = e.relatedTarget.offsetHeight
+        #  t.style.height = "#{t.offsetHeight + draggieSize}px"
+      )
+      .on('dragleave', (e) ->
+        #setTimeout (-> e.target.style.height = ''), 1000
+      )
+      .on('drop', (e) =>
+        @props.onDropDoc e
+        #e.target.style.height = ''
+      )
+
   render: ->
-    (div className: 'list',
+    (div className: "list",
       (h3 {}, @props.key)
       @props.children
     )
 
 Doc = React.createClass
+  handleClick: (e) ->
+    e.preventDefault()
+    @props.onClickEdit()
+
+  componentDidMount: ->
+    interact(@refs.pre.getDOMNode()).draggable
+      onstart: (e) ->
+        e.target.className = 'is-dragging'
+      onmove: (e) ->
+        t = e.target
+        t.x = (t.x|0) + e.dx
+        t.y = (t.y|0) + e.dy
+        t.style.transform =
+        t.style.webkitTransform =
+        t.style.mozTransform = "translate(#{t.x}px, #{t.y}px)"
+      onend: (e) ->
+        e.target.className = ''
+        t = e.target
+        t.x = t.y = 0
+        t.style.transform =
+        t.style.webkitTransform =
+        t.style.mozTransform = ''
+
   render: ->
     data = YAML.stringify @props.doc.data
     (div className: 'doc',
       (h4 {}, @props.doc._id)
       (pre
-        onClick: @props.onClickEdit
+        ref: 'pre'
+        'data-id': @props.doc._id
+        onMouseUp: @handleClick
       , data)
     )
 
 Editing = React.createClass
   getInitialState: ->
     yamlString: ''
+
+  handleDocDropped: (e) ->
+    if @props.doc
+      doc = @props.doc
+      store.get(e.relatedTarget.dataset.id).then (draggedDoc) =>
+        addAs = prompt "add #{draggedDoc._id} to #{doc._id} as:"
+        doc.refs = doc.refs or {}
+        doc.refs[addAs] = draggedDoc._id
+        store.save(doc).then => @fetchDocs()
+
+  componentDidMount: ->
+    interact(@getDOMNode())
+      .dropzone(true)
+      .accept('.doc pre')
+      .on('dragenter', (e) ->
+        #t = e.target
+        #if e.target != e.relatedTarget.parentElement.parentElement
+        #  draggieSize = e.relatedTarget.offsetHeight
+        #  t.style.height = "#{t.offsetHeight + draggieSize}px"
+      )
+      .on('dragleave', (e) ->
+        #setTimeout (-> e.target.style.height = ''), 1000
+      )
+      .on('drop', (e) =>
+        @handleDocDropped e
+        #e.target.style.height = ''
+      )
 
   componentWillReceiveProps: (nextProps) ->
     if not nextProps.doc

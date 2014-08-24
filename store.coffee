@@ -21,7 +21,7 @@ class Store
         'refs':
           map: """function (doc) {
             var getRefs = #{getRefs.toString()}
-            getRefs(doc).forEach( function () {
+            getRefs(doc).forEach( function (ref) {
               var k = ref[0];
               var v = ref[1];
               emit([v, k, doc.data.type]);
@@ -35,6 +35,9 @@ class Store
         'types':
           map: ((doc) -> emit [doc.data.type, doc._id]).toString()
           reduce: '_count'
+
+  reset: ->
+    @pouch.destroy()
 
   save: (doc) ->
     doc._id = cuid() if not doc._id
@@ -54,6 +57,9 @@ class Store
     @pouch.remove doc
 
   get: (id) ->
+    @pouch.get(id)
+
+  getWithRefs: (id) ->
     return new Promise (resolve, reject) =>
       promises = []
       @pouch.get(id).catch(console.log).then (doc) =>
@@ -93,16 +99,20 @@ class Store
           endkey: [id]
           reduce: false
         ).catch(console.log).then (res) =>
-          result = []
+          result = {}
           for row in res.rows
+            result[row.key[1] + '@'] = result[row.key[1] + '@'] or []
             result[row.key[1] + '@'].push row.doc.data
           return result
 
         promises.push referring
 
         # when the two steps are complete, resolve
-        Promise.all(promises).catch(console.log).then (referred, referring) ->
-          resolve(doc, referred, referring)
+        Promise.all(promises).catch(console.log).then (refs) ->
+          resolve
+            doc: doc
+            referred: refs[0]
+            referring: refs[1]
 
   listTypes: ->
     return new Promise (resolve, reject) =>
