@@ -46,11 +46,6 @@ class Store
     else
       doc.created = (new Date()).toISOString()
 
-    # delete shown refs
-    for k, v of doc.data
-      if k[0] == '@'
-        delete doc.data[k]
-
     @pouch.put doc
 
   delete: (doc) ->
@@ -69,7 +64,7 @@ class Store
         for ref in getRefs doc
           k = ref[0]
           v = ref[1]
-          rids[v] = '@' + k
+          rids[v] = k
 
         referred = @pouch.allDocs(
           include_docs: true
@@ -77,16 +72,8 @@ class Store
         ).catch(console.log).then (res) =>
           result = {}
           for row in res.rows
-            if not result[rids[row.doc._id]]
-              # it is nothing, just assign
-              result[rids[row.doc._id]] = row.doc.data
-            else if result[rids[row.doc._id]].push
-              # more than two (it is already an array)
-              result[rids[row.doc._id]].push row.doc.data
-            else if typeof result[rids[row.doc._id]] == 'object'
-              # more than one referred doc (change it from object to array)
-              result[rids[row.doc._id]] = [result[rids[row.doc._id]]]
-              result[rids[row.doc._id]].push row.doc.data
+            result[rids[row.doc._id]] = result[rids[row.doc._id]] or []
+            result[rids[row.doc._id]].push row.doc.data
           return result
 
         promises.push referred
@@ -101,8 +88,8 @@ class Store
         ).catch(console.log).then (res) =>
           result = {}
           for row in res.rows
-            result[row.key[1] + '@'] = result[row.key[1] + '@'] or []
-            result[row.key[1] + '@'].push row.doc.data
+            result['@' + row.key[1]] = result['@' + row.key[1]] or []
+            result['@' + row.key[1]].push row.doc.data
           return result
 
         promises.push referring

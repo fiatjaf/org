@@ -15,7 +15,7 @@ store = new Store
 Board = React.createClass
   getInitialState: ->
     types: {}
-    editingDoc: null
+    selectedDocId: null
 
   componentDidMount: ->
     @fetchDocs()
@@ -25,19 +25,13 @@ Board = React.createClass
       @setState types: types
 
   handleClickDoc: (docid) ->
-    store.getWithRefs(docid).then (result) =>
-      {doc, referred, referring} = result
-      @setState
-        editingDoc: doc
-        editingReferred: referred
-        editingReferring: referring
+    @setState
+      selectedDocId: docid
 
   handleCancelEdit: (e) ->
     e.preventDefault()
     @setState
-      editingDoc: null
-      editingReferred: null
-      editingReferring: null
+      selectedDocId: null
 
   handleDocDropped: (listIdentifier, e) ->
     store.get(e.relatedTarget.dataset.id).then (draggedDoc) =>
@@ -51,9 +45,7 @@ Board = React.createClass
         width: 310 * Object.keys(@state.types).length + 400
     ,
       (Editing
-        doc: @state.editingDoc
-        referred: @state.editingReferred
-        referring: @state.editingReferring
+        docid: @state.selectedDocId
         onCancel: @handleCancelEdit
         afterSave: @fetchDocs
         afterDelete: @fetchDocs
@@ -132,53 +124,56 @@ Doc = React.createClass
 
 Editing = React.createClass
   getInitialState: ->
+    doc: null
+    referred: {}
+    referring: {}
     yamlString: ''
 
-  handleDocDropped: (e) ->
-    if @props.doc
-      doc = @props.doc
-      store.get(e.relatedTarget.dataset.id).then (draggedDoc) =>
-        addAs = prompt "add #{draggedDoc._id} to #{doc._id} as:"
-        doc.refs = doc.refs or {}
-        doc.refs[addAs] = draggedDoc._id
-        store.save(doc).then => @fetchDocs()
-
-  componentDidMount: ->
-    interact(@getDOMNode())
-      .dropzone(true)
-      .accept('.doc pre')
-      .on('dragenter', (e) ->
-        #t = e.target
-        #if e.target != e.relatedTarget.parentElement.parentElement
-        #  draggieSize = e.relatedTarget.offsetHeight
-        #  t.style.height = "#{t.offsetHeight + draggieSize}px"
-      )
-      .on('dragleave', (e) ->
-        #setTimeout (-> e.target.style.height = ''), 1000
-      )
-      .on('drop', (e) =>
-        @handleDocDropped e
-        #e.target.style.height = ''
-      )
-
   componentWillReceiveProps: (nextProps) ->
-    if not nextProps.doc
+    if not nextProps.docid
       doc = {data: {type: 'item'}}
+      @setState
+        doc: doc
+        referred: {}
+        referring: {}
+        yamlString: YAML.stringify doc.data
     else
-      doc = nextProps.doc
+      @loadDoc nextProps.docid
 
-    @setState yamlString: YAML.stringify doc.data
+  loadDoc: (docid) ->
+    store.getWithRefs(docid).then (result) =>
+      {doc, referred, referring} = result
+      @setState
+        doc: doc
+        referred: referred
+        referring: referring
+        yamlString: YAML.stringify doc.data
+
+  addReferredGroup: (e) ->
+    e.preventDefault()
+    groupName = prompt('Name the group of references:')
+    doc = @state.doc or {}
+    doc.refs = {} unless doc.refs
+    unless doc.refs[groupName]
+      doc.refs[groupName] = []
+      store.save(doc).then => @loadDoc()
+
+  docDroppedAtGroup: (groupName, droppedDocId, e) ->
+    if @state.doc
+      doc = @state.doc
+      doc.refs[groupName].push droppedDocId
+      store.save(doc).then => @fetchDocs()
 
   save: (e) ->
     e.preventDefault()
-    doc = @props.doc or {}
+    doc = @state.doc or {}
     data = YAML.parse @state.yamlString
     doc.data = data
     store.save(doc).then => @props.afterSave()
 
   delete: (e) ->
     e.preventDefault()
-    if confirm 'Are you sure you want to delete ' + @props.docs._id + '?'
+    if confirm 'Are you sure you want to delete ' + @state.docs._id + '?'
       store.delete(doc).then => @props.afterDelete()
 
   handleChange: (e) ->
@@ -187,18 +182,26 @@ Editing = React.createClass
   render: ->
     (form className: 'editing pure-form pure-form-stacked',
       (fieldset className: 'main',
-        (h3 {}, if @props.doc then @props.doc._id else 'new card')
+        (h3 {}, if @state.doc then @state.doc._id else 'new card')
         (textarea
           value: @state.yamlString
           onChange: @handleChange
         )
       )
-      (fieldset className: 'referred',
-        (pre {}, YAML.stringify @props.referred)
-      ) if @props.referred
+      (h3 {}, 'references:')
+      (ReferredGroup
+        name: groupName
+        docsdata: @state.referred[groupName]
+        onDocDropped: @docDroppedAtGroup
+      ) for groupName of @state.doc.refs if @state.doc
+      (button
+        className: 'pure-button add-referred'
+        onClick: @addReferredGroup
+      , 'Add group of references')
       (fieldset className: 'referring',
-        (pre {}, YAML.stringify @props.referring)
-      ) if @props.referring
+        (h4 {}, type)
+        (pre {}, YAML.stringify data) for data in docsdata
+      ) for type, docsdata of @state.referring
       (fieldset {},
         (button
           className: 'pure-button cancel'
@@ -207,12 +210,42 @@ Editing = React.createClass
         (button
           className: 'pure-button delete'
           onClick: @delete
-        , 'Delete') if @props.doc
+        , 'Delete') if @state.doc
         (button
           className: 'pure-button save'
           onClick: @save
         , 'Save')
       )
+    )
+
+ReferredGroup = React.createClass
+  componentDidMount: ->
+    interact(@getDOMNode())
+      .dropzone(true)
+      .accept('.doc pre')
+      .on('dragenter', (e) ->
+        t = e.target
+        t.style.backgroundColor = 'beige'
+      )
+      .on('dragleave', (e) ->
+        t = e.target
+        t.style.backgroundColor = ''
+      )
+      .on('drop', (e) =>
+        @props.onDocDropped @props.name, e.relatedTarget.dataset.id
+        t = e.target
+        e.target.style.height = ''
+      )
+
+  render: ->
+    docsdata = @props.docsdata or []
+
+    (fieldset
+      className: 'referred'
+    ,
+      (h4 {}, @props.name)
+      (pre {}, YAML.stringify data) for data in docsdata
+      (span {}, 'drop a card here') if not docsdata.length
     )
 
 Main = React.createClass
