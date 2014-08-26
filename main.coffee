@@ -21,6 +21,19 @@ Board = React.createClass
   componentDidMount: ->
     @fetchDocs()
 
+    # mouse touch to scroll
+    interact(@getDOMNode())
+      .draggable
+        onmove: (e) ->
+          i = i or 0
+          i++
+          if i % 3 == 0
+            dx = -e.dx * 2
+            dy = -e.dy * 2
+            ax = window.pageXOffset || document.documentElement.scrollLeft
+            ay = window.pageYOffset || document.documentElement.scrollTop
+            window.scrollTo ax+dx, ay+dy
+
   fetchDocs: ->
     store.listTypes().then (types) =>
       @setState types: types
