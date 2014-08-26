@@ -1,4 +1,3 @@
-React          = require 'react'
 cuid           = require 'cuid'
 YAML           = {}
 YAML.parse     = require('js-yaml').safeLoad
@@ -20,19 +19,6 @@ Board = React.createClass
 
   componentDidMount: ->
     @fetchDocs()
-
-    # mouse touch to scroll
-    interact(@getDOMNode())
-      .draggable
-        onmove: (e) ->
-          i = i or 0
-          i++
-          if i % 3 == 0
-            dx = -e.dx * 2
-            dy = -e.dy * 2
-            ax = window.pageXOffset || document.documentElement.scrollLeft
-            ay = window.pageYOffset || document.documentElement.scrollTop
-            window.scrollTo ax+dx, ay+dy
 
   fetchDocs: ->
     store.listTypes().then (types) =>
@@ -71,11 +57,36 @@ Board = React.createClass
       selectedDocId: 'NEW'
       typeOfTheNewDoc: listName
 
+  i: 0 # trello-like scrolling
+  dragStart: (e) ->
+    @setState
+      dragging: true
+      startCoords:
+        pageX: e.pageX
+        pageY: e.pageY
+        clientX: e.clientX
+        clientY: e.clientY
+  drag: (e) ->
+    if @state.dragging
+      e.preventDefault()
+      style = window.getComputedStyle e.target, null
+      @i++
+      if @i % 3 == 0
+        dx = @state.startCoords.pageX - e.pageX
+        dy = @state.startCoords.pageY - e.pageY
+        ax = window.pageXOffset || document.documentElement.scrollLeft
+        ay = window.pageYOffset || document.documentElement.scrollTop
+        window.scrollTo ax+dx, ay+dy
+  dragStop: -> @setState dragging: false
+
   render: ->
     (div
       id: 'board'
       style:
         width: 310 * (Object.keys(@state.types).length + 1) + 400
+      onMouseDown: @dragStart
+      onMouseMove: @drag
+      onMouseUp: @dragStop
     ,
       (Editing
         docid: @state.selectedDocId
@@ -103,22 +114,22 @@ Board = React.createClass
 
 List = React.createClass
   componentDidMount: ->
-    interact(@getDOMNode())
-      .dropzone(true)
-      .accept('.doc pre')
-      .on('dragenter', (e) ->
-        #t = e.target
-        #if e.target != e.relatedTarget.parentElement.parentElement
-        #  draggieSize = e.relatedTarget.offsetHeight
-        #  t.style.height = "#{t.offsetHeight + draggieSize}px"
-      )
-      .on('dragleave', (e) ->
-        #setTimeout (-> e.target.style.height = ''), 1000
-      )
-      .on('drop', (e) =>
-        @props.onDropDoc e
-        #e.target.style.height = ''
-      )
+    #interact(@getDOMNode())
+    #  .dropzone(true)
+    #  .accept('.doc pre')
+    #  .on('dragenter', (e) ->
+    #    t = e.target
+    #    if e.target != e.relatedTarget.parentElement.parentElement
+    #      draggieSize = e.relatedTarget.offsetHeight
+    #      t.style.height = "#{t.offsetHeight + draggieSize}px"
+    #  )
+    #  .on('dragleave', (e) ->
+    #    setTimeout (-> e.target.style.height = ''), 1000
+    #  )
+    #  .on('drop', (e) =>
+    #    @props.onDropDoc e
+    #    e.target.style.height = ''
+    #  )
 
   render: ->
     (div className: "list",
@@ -136,23 +147,24 @@ Doc = React.createClass
     @props.onClickEdit()
 
   componentDidMount: ->
-    interact(@refs.pre.getDOMNode()).draggable
-      onstart: (e) ->
-        e.target.className = 'is-dragging'
-      onmove: (e) ->
-        t = e.target
-        t.x = (t.x|0) + e.dx
-        t.y = (t.y|0) + e.dy
-        t.style.transform =
-        t.style.webkitTransform =
-        t.style.mozTransform = "translate(#{t.x}px, #{t.y}px)"
-      onend: (e) ->
-        e.target.className = ''
-        t = e.target
-        t.x = t.y = 0
-        t.style.transform =
-        t.style.webkitTransform =
-        t.style.mozTransform = ''
+    #interact(@refs.pre.getDOMNode()).draggable(
+    #  onstart: (e) ->
+    #    e.target.className = 'is-dragging'
+    #  onmove: (e) ->
+    #    t = e.target
+    #    t.x = (t.x|0) + e.dx
+    #    t.y = (t.y|0) + e.dy
+    #    t.style.transform =
+    #    t.style.webkitTransform =
+    #    t.style.mozTransform = "translate(#{t.x}px, #{t.y}px)"
+    #  onend: (e) ->
+    #    e.target.className = ''
+    #    t = e.target
+    #    t.x = t.y = 0
+    #    t.style.transform =
+    #    t.style.webkitTransform =
+    #    t.style.mozTransform = ''
+    #)
 
   render: ->
     data = YAML.stringify @props.doc.data
@@ -161,7 +173,7 @@ Doc = React.createClass
       (pre
         ref: 'pre'
         'data-id': @props.doc._id
-        onMouseUp: @handleClick
+        onClick: @handleClick
       , data)
     )
 
@@ -276,22 +288,22 @@ Editing = React.createClass
 
 ReferredGroup = React.createClass
   componentDidMount: ->
-    interact(@getDOMNode())
-      .dropzone(true)
-      .accept('.doc pre')
-      .on('dragenter', (e) ->
-        t = e.target
-        t.style.backgroundColor = 'beige'
-      )
-      .on('dragleave', (e) ->
-        t = e.target
-        t.style.backgroundColor = ''
-      )
-      .on('drop', (e) =>
-        @props.onDocDropped @props.name, e.relatedTarget.dataset.id
-        t = e.target
-        e.target.style.backgroundColor = ''
-      )
+    #interact(@getDOMNode())
+    #  .dropzone(true)
+    #  .accept('.doc pre')
+    #  .on('dragenter', (e) ->
+    #    t = e.target
+    #    t.style.backgroundColor = 'beige'
+    #  )
+    #  .on('dragleave', (e) ->
+    #    t = e.target
+    #    t.style.backgroundColor = ''
+    #  )
+    #  .on('drop', (e) =>
+    #    @props.onDocDropped @props.name, e.relatedTarget.dataset.id
+    #    t = e.target
+    #    e.target.style.backgroundColor = ''
+    #  )
 
   render: ->
     docsdata = @props.docsdata or []
