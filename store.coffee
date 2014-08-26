@@ -24,7 +24,7 @@ class Store
             getRefs(doc).forEach( function (ref) {
               var k = ref[0];
               var v = ref[1];
-              emit([v, k, doc.data.type]);
+              emit([v, k, doc.type]);
             })
           }"""
           reduce: '_count'
@@ -33,7 +33,7 @@ class Store
       _id: '_design/types'
       views:
         'types':
-          map: ((doc) -> emit [doc.data.type, doc._id]).toString()
+          map: ((doc) -> emit [doc.type, doc._id]).toString()
           reduce: '_count'
 
   reset: ->
@@ -41,6 +41,7 @@ class Store
 
   save: (doc) ->
     doc._id = cuid() if not doc._id
+    doc.type = cuid.slug() if not doc._id
     if doc._rev
       doc.edited = (new Date()).toISOString()
     else
@@ -57,7 +58,7 @@ class Store
   getWithRefs: (id) ->
     return new Promise (resolve, reject) =>
       promises = []
-      @pouch.get(id).catch(console.log).then (doc) =>
+      @pouch.get(id).catch((x) -> console.log x).then (doc) =>
 
         # get docs referred by this
         rids = {}
@@ -69,7 +70,7 @@ class Store
         referred = @pouch.allDocs(
           include_docs: true
           keys: Object.keys rids
-        ).catch(console.log).then (res) =>
+        ).catch((x) -> console.log x).then (res) =>
           result = {}
           for row in res.rows
             result[rids[row.doc._id]] = result[rids[row.doc._id]] or []
@@ -85,7 +86,7 @@ class Store
           startkey: [id, {}]
           endkey: [id]
           reduce: false
-        ).catch(console.log).then (res) =>
+        ).catch((x) -> console.log x).then (res) =>
           result = {}
           for row in res.rows
             result['@' + row.key[1]] = result['@' + row.key[1]] or []
@@ -95,7 +96,7 @@ class Store
         promises.push referring
 
         # when the two steps are complete, resolve
-        Promise.all(promises).catch(console.log).then (refs) ->
+        Promise.all(promises).catch((x) -> console.log x).then (refs) ->
           resolve
             doc: doc
             referred: refs[0]
@@ -107,7 +108,7 @@ class Store
         include_docs: true
         descending: true
         reduce: false
-      ).catch(console.log).then (res) ->
+      ).catch((x) -> console.log x).then (res) ->
         types = {}
         for row in res.rows
           if not types[row.key[0]]

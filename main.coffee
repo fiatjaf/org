@@ -1,4 +1,5 @@
 React          = require 'react'
+cuid           = require 'cuid'
 YAML           = {}
 YAML.parse     = require('js-yaml').safeLoad
 YAML.stringify = require('prettyaml').stringify
@@ -24,35 +25,56 @@ Board = React.createClass
     store.listTypes().then (types) =>
       @setState types: types
 
+  afterSave: (savedId) ->
+    @setState
+      selectedDocId: savedId
+      typeOfTheNewDoc: undefined
+    @fetchDocs()
+
   handleClickDoc: (docid) ->
     @setState
       selectedDocId: docid
+      typeOfTheNewDoc: undefined
 
   handleCancelEdit: (e) ->
     e.preventDefault()
     @setState
       selectedDocId: null
+      typeOfTheNewDoc: undefined
 
-  handleDocDropped: (listIdentifier, e) ->
+  handleAddList: (e) ->
+    e.preventDefault()
+    @state.types[cuid.slug()] = []
+    @setState types: @state.types
+
+  handleDocDropped: (listName, e) ->
     store.get(e.relatedTarget.dataset.id).then (draggedDoc) =>
-      draggedDoc.data.type = listIdentifier
+      draggedDoc.type = listName
       store.save(draggedDoc).then => @fetchDocs()
+
+  handleClickNewDoc: (listName, e) ->
+    e.preventDefault()
+    @setState
+      selectedDocId: 'NEW'
+      typeOfTheNewDoc: listName
 
   render: ->
     (div
       id: 'board'
       style:
-        width: 310 * Object.keys(@state.types).length + 400
+        width: 310 * (Object.keys(@state.types).length + 1) + 400
     ,
       (Editing
         docid: @state.selectedDocId
+        typeOfTheNewDoc: @state.typeOfTheNewDoc
         onCancel: @handleCancelEdit
-        afterSave: @fetchDocs
+        afterSave: @afterSave
         afterDelete: @fetchDocs
       )
       (List
         key: listName
         onDropDoc: @handleDocDropped.bind @, listName
+        onClickAddNewDoc: @handleClickNewDoc.bind @, listName
       ,
         (Doc
           onClickEdit: @handleClickDoc.bind @, doc._id
@@ -60,6 +82,10 @@ Board = React.createClass
           key: doc._id
         ) for doc in docs
       ) for listName, docs of @state.types
+      (div
+        className: 'list new'
+        onClick: @handleAddList
+      , 'new type')
     )
 
 List = React.createClass
@@ -85,6 +111,10 @@ List = React.createClass
     (div className: "list",
       (h3 {}, @props.key)
       @props.children
+      (button
+        className: 'pure-button new-card'
+        onClick: @props.onClickAddNewDoc
+      , "create new #{@props.key} card")
     )
 
 Doc = React.createClass
@@ -131,12 +161,18 @@ Editing = React.createClass
 
   componentWillReceiveProps: (nextProps) ->
     if not nextProps.docid
-      doc = {data: {type: 'item'}}
+      @setState
+        doc: null
+        referred: {}
+        referring: {}
+        yamlString: ''
+    else if nextProps.docid == 'NEW' and nextProps.typeOfTheNewDoc
+      doc = {type: nextProps.typeOfTheNewDoc, data: {}}
       @setState
         doc: doc
         referred: {}
         referring: {}
-        yamlString: YAML.stringify doc.data
+        yamlString: ''
     else
       @loadDoc nextProps.docid
 
@@ -151,25 +187,28 @@ Editing = React.createClass
 
   addReferredGroup: (e) ->
     e.preventDefault()
-    groupName = prompt('Name the group of references:')
+    groupName = cuid.slug()
     doc = @state.doc or {}
     doc.refs = {} unless doc.refs
     unless doc.refs[groupName]
       doc.refs[groupName] = []
-      store.save(doc).then => @loadDoc()
+      store.save(doc).then (res) =>
+        @loadDoc res.id
 
   docDroppedAtGroup: (groupName, droppedDocId, e) ->
     if @state.doc
       doc = @state.doc
       doc.refs[groupName].push droppedDocId
-      store.save(doc).then => @fetchDocs()
+      store.save(doc).then (res) =>
+        @props.afterSave res.id
 
   save: (e) ->
     e.preventDefault()
     doc = @state.doc or {}
     data = YAML.parse @state.yamlString
     doc.data = data
-    store.save(doc).then => @props.afterSave()
+    store.save(doc).then (res) =>
+      @props.afterSave res.id
 
   delete: (e) ->
     e.preventDefault()
@@ -180,24 +219,28 @@ Editing = React.createClass
     @setState yamlString: e.target.value
 
   render: ->
+    if not @state.doc
+      return (div {})
+
     (form className: 'editing pure-form pure-form-stacked',
       (fieldset className: 'main',
-        (h3 {}, if @state.doc then @state.doc._id else 'new card')
+        (h3 {}, if @state.doc._id then @state.doc._id else "new #{@state.doc.type} card")
         (textarea
           value: @state.yamlString
           onChange: @handleChange
         )
       )
-      (h3 {}, 'references:')
+      (h3 {}, 'referenced by this:') if @state.doc.refs and Object.keys(@state.doc.refs).length
       (ReferredGroup
         name: groupName
         docsdata: @state.referred[groupName]
         onDocDropped: @docDroppedAtGroup
-      ) for groupName of @state.doc.refs if @state.doc
+      ) for groupName of @state.doc.refs
       (button
         className: 'pure-button add-referred'
         onClick: @addReferredGroup
-      , 'Add group of references')
+      , 'Add group of references') if @state.doc._id
+      (h3 {}, 'referring this:') if Object.keys(@state.referring).length
       (fieldset className: 'referring',
         (h4 {}, type)
         (pre {}, YAML.stringify data) for data in docsdata
@@ -234,7 +277,7 @@ ReferredGroup = React.createClass
       .on('drop', (e) =>
         @props.onDocDropped @props.name, e.relatedTarget.dataset.id
         t = e.target
-        e.target.style.height = ''
+        e.target.style.backgroundColor = ''
       )
 
   render: ->
