@@ -5,11 +5,8 @@ cuid = require 'cuid'
 getRefs = (doc) ->
   refs = []
   for k, v of doc.refs
-    if v.push # array
-      for subv in v
-        refs.push [k, subv]
-    else if typeof v == 'string' # string
-      refs.push [k, v]
+    for subv, date of v
+      refs.push [k, subv, date]
   return refs
 
 class Store
@@ -24,7 +21,8 @@ class Store
             getRefs(doc).forEach( function (ref) {
               var k = ref[0];
               var v = ref[1];
-              emit([v, k, doc.type]);
+              var date = ref[2];
+              emit([v, k, doc.type, date]);
             })
           }"""
           reduce: '_count'
@@ -61,20 +59,23 @@ class Store
       @pouch.get(id).catch((x) -> console.log x).then (doc) =>
 
         # get docs referred by this
-        rids = {}
-        for ref in getRefs doc
-          k = ref[0]
-          v = ref[1]
-          rids[v] = k
+        refsList = getRefs doc
 
         referred = @pouch.allDocs(
           include_docs: true
-          keys: Object.keys rids
+          keys: (ref[1] for ref in refsList)
         ).catch((x) -> console.log x).then (res) =>
-          result = {}
+
+          fetched = {}
           for row in res.rows
-            result[rids[row.doc._id]] = result[rids[row.doc._id]] or []
-            result[rids[row.doc._id]].push row.doc.data
+            fetched[row.id] = row.doc.data
+
+          result = {}
+          for ref in refsList
+            group = ref[0]
+            id = ref[1]
+            result[group] = result[group] or []
+            result[group].push fetched[id]
           return result
 
         promises.push referred

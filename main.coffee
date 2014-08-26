@@ -3,8 +3,10 @@ YAML           = {}
 YAML.parse     = require('js-yaml').safeLoad
 YAML.stringify = require('prettyaml').stringify
 Store          = require './store.coffee'
+Dispatcher     = require './dispatcher.coffee'
 
 store = new Store
+dispatcher = new Dispatcher
 
 {div, span, pre,
  small, i, p, a, button,
@@ -47,7 +49,7 @@ Board = React.createClass
     @setState types: @state.types
 
   handleDocDropped: (listName, e) ->
-    store.get(e.relatedTarget.dataset.id).then (draggedDoc) =>
+    store.get(e.dataTransfer.getData 'docId').then (draggedDoc) =>
       draggedDoc.type = listName
       store.save(draggedDoc).then => @fetchDocs()
 
@@ -59,17 +61,17 @@ Board = React.createClass
 
   i: 0 # trello-like scrolling
   dragStart: (e) ->
-    @setState
-      dragging: true
-      startCoords:
-        pageX: e.pageX
-        pageY: e.pageY
-        clientX: e.clientX
-        clientY: e.clientY
+    if e.target == @getDOMNode()
+      @setState
+        dragging: true
+        startCoords:
+          pageX: e.pageX
+          pageY: e.pageY
+          clientX: e.clientX
+          clientY: e.clientY
   drag: (e) ->
     if @state.dragging
       e.preventDefault()
-      style = window.getComputedStyle e.target, null
       @i++
       if @i % 3 == 0
         dx = @state.startCoords.pageX - e.pageX
@@ -77,7 +79,9 @@ Board = React.createClass
         ax = window.pageXOffset || document.documentElement.scrollLeft
         ay = window.pageYOffset || document.documentElement.scrollTop
         window.scrollTo ax+dx, ay+dy
-  dragStop: -> @setState dragging: false
+  dragEnd: ->
+    if @state.dragging
+      @setState dragging: false
 
   render: ->
     (div
@@ -86,7 +90,8 @@ Board = React.createClass
         width: 310 * (Object.keys(@state.types).length + 1) + 400
       onMouseDown: @dragStart
       onMouseMove: @drag
-      onMouseUp: @dragStop
+      onMouseUp: @dragEnd
+      onMouseOut: @dragEnd
     ,
       (Editing
         docid: @state.selectedDocId
@@ -94,6 +99,7 @@ Board = React.createClass
         onCancel: @handleCancelEdit
         afterSave: @afterSave
         afterDelete: @fetchDocs
+
       )
       (List
         key: listName
@@ -113,26 +119,41 @@ Board = React.createClass
     )
 
 List = React.createClass
+  getInitialState: ->
+    height: ''
+
+  onDocBeingDragged: (docType) ->
+    if docType and docType == @props.key
+      return
+    @setState height: "#{@getDOMNode().offsetHeight + 200}px"
+
+  onDocNotBeingDraggedAnymore: ->
+    @setState height: ''
+
   componentDidMount: ->
-    #interact(@getDOMNode())
-    #  .dropzone(true)
-    #  .accept('.doc pre')
-    #  .on('dragenter', (e) ->
-    #    t = e.target
-    #    if e.target != e.relatedTarget.parentElement.parentElement
-    #      draggieSize = e.relatedTarget.offsetHeight
-    #      t.style.height = "#{t.offsetHeight + draggieSize}px"
-    #  )
-    #  .on('dragleave', (e) ->
-    #    setTimeout (-> e.target.style.height = ''), 1000
-    #  )
-    #  .on('drop', (e) =>
-    #    @props.onDropDoc e
-    #    e.target.style.height = ''
-    #  )
+    dispatcher.on 'doc.dragstart', @onDocBeingDragged
+    dispatcher.on 'doc.dragend', @onDocNotBeingDraggedAnymore
+
+  componentWillUnmount: ->
+    dispatcher.off 'doc.dragstart', @onDocBeingDragged
+    dispatcher.off 'doc.dragend', @onDocNotBeingDraggedAnymore
+
+  dragOver: (e) -> e.preventDefault()
+  drop: (e) ->
+    draggedDocId = e.dataTransfer.getData 'docId'
+    @props.onDropDoc e
+    @setState height: ''
 
   render: ->
-    (div className: "list",
+    (div
+      className: "list"
+      onDragOver: @dragOver
+      onDragEnter: @dragEnter
+      onDragLeave: @dragLeave
+      onDrop: @drop
+      style:
+        height: @state.height
+    ,
       (h3 {}, @props.key)
       @props.children
       (button
@@ -142,38 +163,33 @@ List = React.createClass
     )
 
 Doc = React.createClass
+  getInitialState: -> {}
+
   handleClick: (e) ->
     e.preventDefault()
     @props.onClickEdit()
 
-  componentDidMount: ->
-    #interact(@refs.pre.getDOMNode()).draggable(
-    #  onstart: (e) ->
-    #    e.target.className = 'is-dragging'
-    #  onmove: (e) ->
-    #    t = e.target
-    #    t.x = (t.x|0) + e.dx
-    #    t.y = (t.y|0) + e.dy
-    #    t.style.transform =
-    #    t.style.webkitTransform =
-    #    t.style.mozTransform = "translate(#{t.x}px, #{t.y}px)"
-    #  onend: (e) ->
-    #    e.target.className = ''
-    #    t = e.target
-    #    t.x = t.y = 0
-    #    t.style.transform =
-    #    t.style.webkitTransform =
-    #    t.style.mozTransform = ''
-    #)
+  dragStart: (e) ->
+    dispatcher.emit 'doc.dragstart', @props.doc.type
+    e.dataTransfer.setData 'docId', @props.doc._id
+    @setState dragging: true
+
+  dragEnd: -> dispatcher.emit 'doc.dragend'
 
   render: ->
     data = YAML.stringify @props.doc.data
-    (div className: 'doc',
+
+    (div
+      className: 'doc'
+      onClick: @handleClick
+    ,
       (h4 {}, @props.doc._id)
       (pre
+        className: if @state.dragging then 'dragging' else ''
+        draggable: true
+        onDragStart: @dragStart
+        onDragEnd: @dragEnd
         ref: 'pre'
-        'data-id': @props.doc._id
-        onClick: @handleClick
       , data)
     )
 
@@ -216,16 +232,17 @@ Editing = React.createClass
     doc = @state.doc or {}
     doc.refs = {} unless doc.refs
     unless doc.refs[groupName]
-      doc.refs[groupName] = []
+      doc.refs[groupName] = {}
       store.save(doc).then (res) =>
         @loadDoc res.id
 
   docDroppedAtGroup: (groupName, droppedDocId, e) ->
     if @state.doc
       doc = @state.doc
-      doc.refs[groupName].push droppedDocId
+      doc.refs[groupName][droppedDocId] = (new Date()).toISOString()
       store.save(doc).then (res) =>
         @props.afterSave res.id
+        @loadDoc res.id
 
   save: (e) ->
     e.preventDefault()
@@ -249,7 +266,7 @@ Editing = React.createClass
 
     (form className: 'editing pure-form pure-form-stacked',
       (fieldset className: 'main',
-        (h3 {}, if @state.doc._id then @state.doc._id else "new #{@state.doc.type} card")
+        (h3 {}, if not @state.doc._id then "new #{@state.doc.type} card" else '')
         (textarea
           value: @state.yamlString
           onChange: @handleChange
@@ -287,29 +304,30 @@ Editing = React.createClass
     )
 
 ReferredGroup = React.createClass
-  componentDidMount: ->
-    #interact(@getDOMNode())
-    #  .dropzone(true)
-    #  .accept('.doc pre')
-    #  .on('dragenter', (e) ->
-    #    t = e.target
-    #    t.style.backgroundColor = 'beige'
-    #  )
-    #  .on('dragleave', (e) ->
-    #    t = e.target
-    #    t.style.backgroundColor = ''
-    #  )
-    #  .on('drop', (e) =>
-    #    @props.onDocDropped @props.name, e.relatedTarget.dataset.id
-    #    t = e.target
-    #    e.target.style.backgroundColor = ''
-    #  )
+  getInitialState: ->
+    backgroundColor: ''
+
+  dragOver: (e) -> e.preventDefault()
+  dragEnter: (e) ->
+    @setState backgroundColor: 'beige'
+  dragLeave: (e) ->
+    @setState backgroundColor: ''
+  drop: (e) ->
+    draggedDocId = e.dataTransfer.getData 'docId'
+    @props.onDocDropped @props.name, draggedDocId
+    @setState backgroundColor: ''
 
   render: ->
     docsdata = @props.docsdata or []
 
     (fieldset
       className: 'referred'
+      onDrop: @drop
+      onDragOver: @dragOver
+      onDragEnter: @dragEnter
+      onDragLeave: @dragLeave
+      style:
+        backgroundColor: @state.backgroundColor
     ,
       (h4 {}, @props.name)
       (pre {}, YAML.stringify data) for data in docsdata
