@@ -27,21 +27,16 @@ Board = React.createClass
       @setState types: types
 
   afterSave: (savedId) ->
-    @setState
-      selectedDocId: savedId
-      typeOfTheNewDoc: undefined
     @fetchDocs()
+    if savedId == @state.selectedDocId
+      @setState
+        selectedDocId: null
 
   handleClickDoc: (docid) ->
-    @setState
-      selectedDocId: docid
-      typeOfTheNewDoc: undefined
+    @setState selectedDocId: docid
 
-  handleCancelEdit: (e) ->
-    e.preventDefault()
-    @setState
-      selectedDocId: null
-      typeOfTheNewDoc: undefined
+  handleCancelEdit: ->
+    @setState selectedDocId: null
 
   handleAddList: (e) ->
     e.preventDefault()
@@ -52,12 +47,6 @@ Board = React.createClass
     store.get(e.dataTransfer.getData 'docId').then (draggedDoc) =>
       draggedDoc.type = listName
       store.save(draggedDoc).then => @fetchDocs()
-
-  handleClickNewDoc: (listName, e) ->
-    e.preventDefault()
-    @setState
-      selectedDocId: 'NEW'
-      typeOfTheNewDoc: listName
 
   i: 0 # trello-like scrolling
   dragStart: (e) ->
@@ -93,24 +82,30 @@ Board = React.createClass
       onMouseUp: @dragEnd
       onMouseOut: @dragEnd
     ,
-      (Editing
-        docid: @state.selectedDocId
-        typeOfTheNewDoc: @state.typeOfTheNewDoc
-        onCancel: @handleCancelEdit
-        afterSave: @afterSave
-        afterDelete: @fetchDocs
-
-      )
       (List
         key: listName
         onDropDoc: @handleDocDropped.bind @, listName
-        onClickAddNewDoc: @handleClickNewDoc.bind @, listName
       ,
         (Doc
+          selected: (@state.selectedDocId == doc._id)
           onClickEdit: @handleClickDoc.bind @, doc._id
           doc: doc,
           key: doc._id
+        ,
+          (Editing
+            docid: doc._id
+            onCancel: @handleCancelEdit
+            afterSave: @afterSave
+            afterDelete: @fetchDocs
+          )
         ) for doc in docs
+        (div className: 'doc',
+          (Editing
+            type: listName
+            afterSave: @afterSave
+            afterDelete: @fetchDocs
+          )
+        )
       ) for listName, docs of @state.types
       (div
         className: 'list new'
@@ -156,10 +151,6 @@ List = React.createClass
     ,
       (h3 {}, @props.key)
       @props.children
-      (button
-        className: 'pure-button new-card'
-        onClick: @props.onClickAddNewDoc
-      , "create new #{@props.key} card")
     )
 
 Doc = React.createClass
@@ -177,54 +168,50 @@ Doc = React.createClass
   dragEnd: -> dispatcher.emit 'doc.dragend'
 
   render: ->
-    data = YAML.stringify @props.doc.data
+    yamlString = switch typeof @props.doc.data
+      when 'object' then YAML.stringify @props.doc.data
+      else @props.doc.data
+
+    if @props.selected
+      content = @props.children
+    else
+      content = (div
+        className: 'listed'
+        onClick: @handleClick
+      ,
+        (pre
+          className: if @state.dragging then 'dragging' else ''
+          draggable: true
+          onDragStart: @dragStart
+          onDragEnd: @dragEnd
+          ref: 'pre'
+        , yamlString)
+      )
 
     (div
       className: 'doc'
-      onClick: @handleClick
     ,
-      (h4 {}, @props.doc._id)
-      (pre
-        className: if @state.dragging then 'dragging' else ''
-        draggable: true
-        onDragStart: @dragStart
-        onDragEnd: @dragEnd
-        ref: 'pre'
-      , data)
+      (h4 {onClick: @handleClick}, @props.doc._id)
+      content
     )
 
 Editing = React.createClass
   getInitialState: ->
-    doc: null
-    referred: {}
-    referring: {}
-    yamlString: ''
+    textareaSize: 100
 
-  componentWillReceiveProps: (nextProps) ->
-    if not nextProps.docid
-      @setState
-        doc: null
-        referred: {}
-        referring: {}
-        yamlString: ''
-    else if nextProps.docid == 'NEW' and nextProps.typeOfTheNewDoc
-      doc = {type: nextProps.typeOfTheNewDoc, data: {}}
-      @setState
-        doc: doc
-        referred: {}
-        referring: {}
-        yamlString: ''
-    else
-      @loadDoc nextProps.docid
+  componentWillMount: ->
+    if @props.docid
+      @loadDoc @props.docid
 
   loadDoc: (docid) ->
     store.getWithRefs(docid).then (result) =>
       {doc, referred, referring} = result
+      yamlString = if typeof doc.data is 'object' then YAML.stringify doc.data else doc.data
       @setState
         doc: doc
         referred: referred
         referring: referring
-        yamlString: YAML.stringify doc.data
+        yamlString: yamlString
 
   addReferredGroup: (e) ->
     e.preventDefault()
@@ -247,61 +234,100 @@ Editing = React.createClass
   save: (e) ->
     e.preventDefault()
     doc = @state.doc or {}
-    data = YAML.parse @state.yamlString
-    doc.data = data
+    parsed = YAML.parse @state.yamlString
+
+    # special cases of doc data
+    doc.data = switch typeof parsed
+      when 'object' then parsed
+      when 'string' then @state.yamlString
+
     store.save(doc).then (res) =>
       @props.afterSave res.id
+      if @props.docid
+        @loadDoc res.id
 
   delete: (e) ->
     e.preventDefault()
     if confirm 'Are you sure you want to delete ' + @state.docs._id + '?'
       store.delete(doc).then => @props.afterDelete()
 
+  handleClickAddNewDoc: (e) ->
+    e.preventDefault()
+    @setState
+      doc: {type: @props.type, data: {}}
+      referred: {}
+      referring: {}
+      yamlString: ''
+
   handleChange: (e) ->
-    @setState yamlString: e.target.value
+    @setState
+      yamlString: e.target.value
+
+  handleCancel: (e) ->
+    e.preventDefault()
+    if @props.onCancel
+      @props.onCancel()
+    else
+      @setState doc: null
 
   render: ->
-    if not @state.doc
-      return (div {})
+    if not @state.doc and not @props.docid
+      return (button
+        className: 'pure-button new-card'
+        onClick: @handleClickAddNewDoc
+      , "create new #{@props.type} card")
 
-    (form className: 'editing pure-form pure-form-stacked',
-      (fieldset className: 'main',
-        (h3 {}, if not @state.doc._id then "new #{@state.doc.type} card" else '')
-        (textarea
-          value: @state.yamlString
-          onChange: @handleChange
+    else if @state.doc
+      textareaHeight = @state.yamlString.split('\n').length * 18
+
+      return (div className: 'editing',
+        (form className: 'pure-form pure-form-stacked',
+          (fieldset className: 'main',
+            (h3 {}, if not @state.doc._id then "new #{@state.doc.type} card" else 'new')
+            (textarea
+              value: @state.yamlString
+              onChange: @handleChange
+              style:
+                minHeight: if textareaHeight < 100 then 100 else textareaHeight
+            )
+          )
+          (ReferredGroup
+            key: groupName
+            name: groupName
+            docsdata: @state.referred[groupName]
+            onDocDropped: @docDroppedAtGroup
+          ) for groupName of @state.doc.refs if @state.doc.refs
+          (button
+            className: 'pure-button add-referred'
+            onClick: @addReferredGroup
+          , 'Add group of references') if @state.doc._id
+          (fieldset
+            key: type
+            className: 'referring'
+          ,
+            (h4 {}, type + ':')
+            (pre {key: data.slice(0, 20) + data.slice(-20)},
+              if typeof data is 'object' then YAML.stringify data else data
+            ) for data in docsdata
+          ) for type, docsdata of @state.referring
+          (fieldset {},
+            (button
+              className: 'pure-button cancel'
+              onClick: @handleCancel
+            , 'Cancel')
+            (button
+              className: 'pure-button delete'
+              onClick: @delete
+            , 'Delete') if @state.doc
+            (button
+              className: 'pure-button save'
+              onClick: @save
+            , 'Save')
+          )
         )
       )
-      (h3 {}, 'referenced by this:') if @state.doc.refs and Object.keys(@state.doc.refs).length
-      (ReferredGroup
-        name: groupName
-        docsdata: @state.referred[groupName]
-        onDocDropped: @docDroppedAtGroup
-      ) for groupName of @state.doc.refs
-      (button
-        className: 'pure-button add-referred'
-        onClick: @addReferredGroup
-      , 'Add group of references') if @state.doc._id
-      (h3 {}, 'referring this:') if Object.keys(@state.referring).length
-      (fieldset className: 'referring',
-        (h4 {}, type)
-        (pre {}, YAML.stringify data) for data in docsdata
-      ) for type, docsdata of @state.referring
-      (fieldset {},
-        (button
-          className: 'pure-button cancel'
-          onClick: @props.onCancel
-        , 'Cancel')
-        (button
-          className: 'pure-button delete'
-          onClick: @delete
-        , 'Delete') if @state.doc
-        (button
-          className: 'pure-button save'
-          onClick: @save
-        , 'Save')
-      )
-    )
+    else
+      return (div {})
 
 ReferredGroup = React.createClass
   getInitialState: ->
@@ -329,8 +355,10 @@ ReferredGroup = React.createClass
       style:
         backgroundColor: @state.backgroundColor
     ,
-      (h4 {}, @props.name)
-      (pre {}, YAML.stringify data) for data in docsdata
+      (h4 {}, @props.name + ':')
+      (pre {key: data.slice(0, 20) + data.slice(-20)},
+        if typeof data is 'object' then YAML.stringify data else data
+      ) for data in docsdata
       (span {}, 'drop a card here') if not docsdata.length
     )
 

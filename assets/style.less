@@ -7,12 +7,12 @@ html, body, #main {
   padding: 0;
 }
 
-#board, .editing, .list, .doc, pre {
+#board, .list, pre {
   border-radius: 4px;
 }
 
 h3 {
-  margin: auto !important;
+  margin: 4px auto 0 auto !important;
   display: block;
   width: 185px;
   word-wrap: break-word;
@@ -29,36 +29,6 @@ h3 {
   background: #4C7F5D;
   color: white;
   cursor: default !important;
-}
-
-.editing {
-  float: left;
-  background: rgba(74, 179, 250, 0.7);
-  margin-right: 8px;
-
-  fieldset {
-    width: 277px;
-    padding: 10px 15px !important;
-  }
-  h3 { color: white !important; }
-  textarea {
-    font-family: monospace;
-    width: 100%;
-    min-height: 300px;
-    font-size: 0.9em;
-  }
-
-  button { color: white; margin: auto 2px; }
-  button.add-referred {
-    margin: auto;
-    display: block;
-    padding: 15px 8px;
-    border: none;
-    background-color: rgba(12,3,42,0.5);
-  }
-  button.cancel { background-color: rgb(201, 190, 111) }
-  button.delete { background-color: rgb(236, 106, 106) }
-  button.save { background-color: rgb(56, 204, 104) }
 }
 
 .list {
@@ -89,20 +59,15 @@ h3 {
 }
 
 .doc {
-  width: 100%:
-  float: left;
-  padding: 5px;
-  margin: 5px;
-  background: rgba(255,255,255,0.4);
+  margin: 5px 0;
+  width: 100%;
+  overflow: auto;
 
   h4 {
     font-size: 0.9em;
     font-weight: normal;
     margin: 0.33em 0;
   }
-}
-
-.doc, form.editing {
 
   pre {
     color: #333;
@@ -134,6 +99,58 @@ h3 {
       -ms-transform-origin: none;
       box-shadow: none;
     }
+  }
+
+  .listed, .editing {
+    float: left;
+    width: 100%;
+    padding: 5px;
+  }
+
+  .listed {
+    background: rgba(255,255,255,0.4);
+  }
+
+  .editing {
+    background: rgba(74, 179, 250, 0.7);
+
+    form {
+      padding-top: 10px;
+    }
+    fieldset {
+      padding: 0 15px 9px 15px !important;
+    }
+    h3 { color: white !important; }
+    textarea {
+      font-family: monospace;
+      width: 100%;
+      min-height: 100px;
+      font-size: 0.9em;
+      resize: vertical;
+    }
+
+    .referred, .referring {
+      h3 { font-size: 1em; }
+      pre {
+        margin-bottom: 2px;
+      }
+    }
+    .referred {}
+    .referring {
+      margin-bottom: 3px;
+    }
+
+    button { color: white; margin: auto 2px; }
+    button.add-referred {
+      margin: 0 auto 4px auto;
+      display: block;
+      padding: 12px 8px;
+      border: none;
+      background-color: rgba(12,3,42,0.5);
+    }
+    button.cancel { background-color: rgb(201, 190, 111) }
+    button.delete { background-color: rgb(236, 106, 106) }
+    button.save { background-color: rgb(56, 204, 104) }
   }
 
 }
