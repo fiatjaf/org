@@ -2,11 +2,18 @@ cuid           = require 'cuid'
 YAML           = {}
 YAML.parse     = require('js-yaml').safeLoad
 YAML.stringify = require('prettyaml').stringify
+M              = require 'moraerty'
+I              = require 'immutable'
 Store          = require './store.coffee'
 Dispatcher     = require './dispatcher.coffee'
 
 store = new Store
 dispatcher = new Dispatcher
+
+CTX = M.createContext React, I, {
+  typeGroupLists: []
+  selectedDocId: null
+}
 
 {div, span, pre,
  small, i, p, a, button,
@@ -19,6 +26,9 @@ Board = React.createClass
   getInitialState: ->
     typeGroupList: []
     selectedDocId: null
+
+  componentWillMount: ->
+    CTX.init(@)
 
   componentDidMount: ->
     @fetchDocs()
