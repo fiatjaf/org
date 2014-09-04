@@ -15,6 +15,7 @@ dispatcher = new Dispatcher
  ul, li} = React.DOM
 
 Board = React.createClass
+  displayName: 'Board'
   getInitialState: ->
     types: {}
     selectedDocId: null
@@ -114,6 +115,7 @@ Board = React.createClass
     )
 
 List = React.createClass
+  displayName: 'List'
   getInitialState: ->
     height: ''
 
@@ -154,6 +156,7 @@ List = React.createClass
     )
 
 Doc = React.createClass
+  displayName: 'Doc'
   getInitialState: -> {}
 
   handleClick: (e) ->
@@ -196,6 +199,7 @@ Doc = React.createClass
     )
 
 Editing = React.createClass
+  displayName: 'Editing'
   getInitialState: ->
     textareaSize: 100
 
@@ -245,11 +249,13 @@ Editing = React.createClass
       @props.afterSave res.id
       if @props.docid
         @loadDoc res.id
+      else
+        @replaceState {textAreaSize: 100}
 
   delete: (e) ->
     e.preventDefault()
-    if confirm 'Are you sure you want to delete ' + @state.docs._id + '?'
-      store.delete(doc).then => @props.afterDelete()
+    if confirm 'Are you sure you want to delete ' + @state.doc._id + '?'
+      store.delete(@state.doc).then => @props.afterDelete()
 
   handleClickAddNewDoc: (e) ->
     e.preventDefault()
@@ -318,7 +324,7 @@ Editing = React.createClass
             (button
               className: 'pure-button delete'
               onClick: @delete
-            , 'Delete') if @state.doc
+            , 'Delete') if @props.docid
             (button
               className: 'pure-button save'
               onClick: @save
@@ -330,6 +336,7 @@ Editing = React.createClass
       return (div {})
 
 ReferredGroup = React.createClass
+  displayName: 'ReferredGroup'
   getInitialState: ->
     backgroundColor: ''
 
@@ -363,6 +370,7 @@ ReferredGroup = React.createClass
     )
 
 Main = React.createClass
+  displayName: 'Main'
   reset: (e) ->
     e.preventDefault()
     store.reset().then(location.reload)
