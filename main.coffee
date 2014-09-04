@@ -17,15 +17,15 @@ dispatcher = new Dispatcher
 Board = React.createClass
   displayName: 'Board'
   getInitialState: ->
-    types: {}
+    typeGroupList: []
     selectedDocId: null
 
   componentDidMount: ->
     @fetchDocs()
 
   fetchDocs: ->
-    store.listTypes().then (types) =>
-      @setState types: types
+    store.listTypes().then (typeGroupList) =>
+      @setState typeGroupList: typeGroupList
 
   afterSave: (savedId) ->
     @fetchDocs()
@@ -41,8 +41,10 @@ Board = React.createClass
 
   handleAddList: (e) ->
     e.preventDefault()
-    @state.types[cuid.slug()] = []
-    @setState types: @state.types
+    @state.typeGroupList.push
+      name: cuid.slug()
+      docs: []
+    @setState typeGroupList: @state.typeGroupList
 
   handleDocDropped: (listName, e) ->
     store.get(e.dataTransfer.getData 'docId').then (draggedDoc) =>
@@ -77,15 +79,15 @@ Board = React.createClass
     (div
       id: 'board'
       style:
-        width: 310 * (Object.keys(@state.types).length + 1) + 400
+        width: 310 * (@state.typeGroupList.length + 1) + 400
       onMouseDown: @dragStart
       onMouseMove: @drag
       onMouseUp: @dragEnd
       onMouseOut: @dragEnd
     ,
       (List
-        key: listName
-        onDropDoc: @handleDocDropped.bind @, listName
+        key: typeGroup.name
+        onDropDoc: @handleDocDropped.bind @, typeGroup.name
       ,
         (Doc
           selected: (@state.selectedDocId == doc._id)
@@ -99,15 +101,15 @@ Board = React.createClass
             afterSave: @afterSave
             afterDelete: @fetchDocs
           )
-        ) for doc in docs
+        ) for doc in typeGroup.docs
         (div className: 'doc',
           (Editing
-            type: listName
+            type: typeGroup.name
             afterSave: @afterSave
             afterDelete: @fetchDocs
           )
         )
-      ) for listName, docs of @state.types
+      ) for typeGroup in @state.typeGroupList
       (div
         className: 'list new'
         onClick: @handleAddList
@@ -137,6 +139,7 @@ List = React.createClass
 
   dragOver: (e) -> e.preventDefault()
   drop: (e) ->
+    e.stopPropagation()
     draggedDocId = e.dataTransfer.getData 'docId'
     @props.onDropDoc e
     @setState height: ''
@@ -342,10 +345,12 @@ ReferredGroup = React.createClass
 
   dragOver: (e) -> e.preventDefault()
   dragEnter: (e) ->
+    e.stopPropagation()
     @setState backgroundColor: 'beige'
   dragLeave: (e) ->
     @setState backgroundColor: ''
   drop: (e) ->
+    e.stopPropagation()
     draggedDocId = e.dataTransfer.getData 'docId'
     @props.onDocDropped @props.name, draggedDocId
     @setState backgroundColor: ''

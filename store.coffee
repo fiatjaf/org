@@ -1,5 +1,6 @@
 PouchDB = require './pouchdb'
 Promise = require 'lie'
+R = require 'ramda'
 cuid = require 'cuid'
 
 getRefs = (doc) ->
@@ -110,12 +111,10 @@ class Store
         descending: true
         reduce: false
       ).catch((x) -> console.log x).then (res) ->
-        types = {}
-        for row in res.rows
-          if not types[row.key[0]]
-            types[row.key[0]] = []
-          types[row.key[0]].push row.doc
-        resolve types
+        typeFromRow = R.compose R.head, R.get('key')
+        typeGroupFromRows = (rows) -> {name: typeFromRow(rows[0]), docs: R.map(R.get('doc'), rows)}
+        typeGroupList = R.values R.mapObj typeGroupFromRows, R.groupBy(typeFromRow, res.rows)
+        resolve typeGroupList
 
   addIndex: (name, map, reduce) ->
     views = {}
