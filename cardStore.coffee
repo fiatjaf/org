@@ -3,9 +3,9 @@ Promise = require 'lie'
 R = require 'ramda'
 cuid = require 'cuid'
 
-getRefs = (doc) ->
+getRefs = (card) ->
   refs = []
-  for k, v of doc.refs
+  for k, v of card.refs
     for subv, date of v
       refs.push [k, subv, date]
   return refs
@@ -17,13 +17,13 @@ class Store
       _id: '_design/refs'
       views:
         'refs':
-          map: """function (doc) {
+          map: """function (card) {
             var getRefs = #{getRefs.toString()}
-            getRefs(doc).forEach( function (ref) {
+            getRefs(card).forEach( function (ref) {
               var k = ref[0];
               var v = ref[1];
               var date = ref[2];
-              emit([v, k, doc.type, date]);
+              emit([v, k, card.type, date]);
             })
           }"""
           reduce: '_count'
@@ -32,24 +32,24 @@ class Store
       _id: '_design/types'
       views:
         'types':
-          map: ((doc) -> emit [doc.type, doc._id]).toString()
+          map: ((card) -> emit [card.type, card._id]).toString()
           reduce: '_count'
 
   reset: ->
     @pouch.destroy()
 
-  save: (doc) ->
-    doc._id = cuid() if not doc._id
-    doc.type = cuid.slug() if not doc._id
-    if doc._rev
-      doc.edited = (new Date()).toISOString()
+  save: (card) ->
+    card._id = cuid() if not card._id
+    card.type = cuid.slug() if not card._id
+    if card._rev
+      card.edited = (new Date()).toISOString()
     else
-      doc.created = (new Date()).toISOString()
+      card.created = (new Date()).toISOString()
 
-    @pouch.put doc
+    @pouch.put card
 
-  delete: (doc) ->
-    @pouch.remove doc
+  delete: (card) ->
+    @pouch.remove card
 
   get: (id) ->
     @pouch.get(id)
@@ -57,10 +57,10 @@ class Store
   getWithRefs: (id) ->
     return new Promise (resolve, reject) =>
       promises = []
-      @pouch.get(id).catch((x) -> console.log x).then (doc) =>
+      @pouch.get(id).catch((x) -> console.log x).then (card) =>
 
-        # get docs referred by this
-        refsList = getRefs doc
+        # get cards referred by this
+        refsList = getRefs card
 
         referred = @pouch.allDocs(
           include_docs: true
@@ -81,7 +81,7 @@ class Store
 
         promises.push referred
 
-        # get docs referring this
+        # get cards referring this
         referring = @pouch.query('refs',
           descending: true
           include_docs: true
@@ -100,7 +100,7 @@ class Store
         # when the two steps are complete, resolve
         Promise.all(promises).catch((x) -> console.log x).then (refs) ->
           resolve
-            doc: doc
+            card: card
             referred: refs[0]
             referring: refs[1]
 
@@ -112,20 +112,8 @@ class Store
         reduce: false
       ).catch((x) -> console.log x).then (res) ->
         typeFromRow = R.compose R.head, R.get('key')
-        typeGroupFromRows = (rows) -> {name: typeFromRow(rows[0]), docs: R.map(R.get('doc'), rows)}
+        typeGroupFromRows = (rows) -> {name: typeFromRow(rows[0]), cards: R.map(R.get('doc'), rows)}
         typeGroupList = R.values R.mapObj typeGroupFromRows, R.groupBy(typeFromRow, res.rows)
         resolve typeGroupList
-
-  addIndex: (name, map, reduce) ->
-    views = {}
-    views[name] = {
-      map: map.toString()
-    }
-    views[name].reduce = reduce.toString() if reduce
-
-    @pouch.put({
-      _id: "_design/#{name}"
-      views: views
-    })
 
 module.exports = Store

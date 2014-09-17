@@ -2,10 +2,10 @@ cuid           = require 'cuid'
 YAML           = {}
 YAML.parse     = require('js-yaml').safeLoad
 YAML.stringify = require('prettyaml').stringify
-Store          = require './store.coffee'
+CardStore      = require './cardStore.coffee'
 Dispatcher     = require './dispatcher.coffee'
 
-store = new Store
+cardStore = new CardStore
 dispatcher = new Dispatcher
 
 {div, span, pre,
@@ -18,38 +18,38 @@ Board = React.createClass
   displayName: 'Board'
   getInitialState: ->
     typeGroupList: []
-    selectedDocId: null
+    selectedCardId: null
 
   componentDidMount: ->
-    @fetchDocs()
+    @fetchCards()
 
-  fetchDocs: ->
-    store.listTypes().then (typeGroupList) =>
+  fetchCards: ->
+    cardStore.listTypes().then (typeGroupList) =>
       @setState typeGroupList: typeGroupList
 
   afterSave: (savedId) ->
-    @fetchDocs()
-    if savedId == @state.selectedDocId
+    @fetchCards()
+    if savedId == @state.selectedCardId
       @setState
-        selectedDocId: null
+        selectedCardId: null
 
-  handleClickDoc: (docid) ->
-    @setState selectedDocId: docid
+  handleClickCard: (cardid) ->
+    @setState selectedCardId: cardid
 
   handleCancelEdit: ->
-    @setState selectedDocId: null
+    @setState selectedCardId: null
 
   handleAddList: (e) ->
     e.preventDefault()
     @state.typeGroupList.push
       name: cuid.slug()
-      docs: []
+      cards: []
     @setState typeGroupList: @state.typeGroupList
 
-  handleDocDropped: (listName, e) ->
-    store.get(e.dataTransfer.getData 'docId').then (draggedDoc) =>
-      draggedDoc.type = listName
-      store.save(draggedDoc).then => @fetchDocs()
+  handleCardDropped: (listName, e) ->
+    cardStore.get(e.dataTransfer.getData 'cardId').then (draggedCard) =>
+      draggedCard.type = listName
+      cardStore.save(draggedCard).then => @fetchCards()
 
   i: 0 # trello-like scrolling
   dragStart: (e) ->
@@ -87,26 +87,26 @@ Board = React.createClass
     ,
       (List
         key: typeGroup.name
-        onDropDoc: @handleDocDropped.bind @, typeGroup.name
+        onDropCard: @handleCardDropped.bind @, typeGroup.name
       ,
-        (Doc
-          selected: (@state.selectedDocId == doc._id)
-          onClickEdit: @handleClickDoc.bind @, doc._id
-          doc: doc,
-          key: doc._id
+        (Card
+          selected: (@state.selectedCardId == card._id)
+          onClickEdit: @handleClickCard.bind @, card._id
+          card: card,
+          key: card._id
         ,
           (Editing
-            docid: doc._id
+            cardid: card._id
             onCancel: @handleCancelEdit
             afterSave: @afterSave
-            afterDelete: @fetchDocs
+            afterDelete: @fetchCards
           )
-        ) for doc in typeGroup.docs
-        (div className: 'doc',
+        ) for card in typeGroup.cards
+        (div className: 'card',
           (Editing
             type: typeGroup.name
             afterSave: @afterSave
-            afterDelete: @fetchDocs
+            afterDelete: @fetchCards
           )
         )
       ) for typeGroup in @state.typeGroupList
@@ -121,27 +121,27 @@ List = React.createClass
   getInitialState: ->
     height: ''
 
-  onDocBeingDragged: (docType) ->
-    if docType and docType == @props.key
+  onCardBeingDragged: (cardType) ->
+    if cardType and cardType == @props.key
       return
     @setState height: "#{@getDOMNode().offsetHeight + 200}px"
 
-  onDocNotBeingDraggedAnymore: ->
+  onCardNotBeingDraggedAnymore: ->
     @setState height: ''
 
   componentDidMount: ->
-    dispatcher.on 'doc.dragstart', @onDocBeingDragged
-    dispatcher.on 'doc.dragend', @onDocNotBeingDraggedAnymore
+    dispatcher.on 'card.dragstart', @onCardBeingDragged
+    dispatcher.on 'card.dragend', @onCardNotBeingDraggedAnymore
 
   componentWillUnmount: ->
-    dispatcher.off 'doc.dragstart', @onDocBeingDragged
-    dispatcher.off 'doc.dragend', @onDocNotBeingDraggedAnymore
+    dispatcher.off 'card.dragstart', @onCardBeingDragged
+    dispatcher.off 'card.dragend', @onCardNotBeingDraggedAnymore
 
   dragOver: (e) -> e.preventDefault()
   drop: (e) ->
     e.stopPropagation()
-    draggedDocId = e.dataTransfer.getData 'docId'
-    @props.onDropDoc e
+    draggedCardId = e.dataTransfer.getData 'cardId'
+    @props.onDropCard e
     @setState height: ''
 
   render: ->
@@ -158,8 +158,8 @@ List = React.createClass
       @props.children
     )
 
-Doc = React.createClass
-  displayName: 'Doc'
+Card = React.createClass
+  displayName: 'Card'
   getInitialState: -> {}
 
   handleClick: (e) ->
@@ -167,16 +167,16 @@ Doc = React.createClass
     @props.onClickEdit()
 
   dragStart: (e) ->
-    dispatcher.emit 'doc.dragstart', @props.doc.type
-    e.dataTransfer.setData 'docId', @props.doc._id
+    dispatcher.emit 'card.dragstart', @props.card.type
+    e.dataTransfer.setData 'cardId', @props.card._id
     @setState dragging: true
 
-  dragEnd: -> dispatcher.emit 'doc.dragend'
+  dragEnd: -> dispatcher.emit 'card.dragend'
 
   render: ->
-    yamlString = switch typeof @props.doc.data
-      when 'object' then YAML.stringify @props.doc.data
-      else @props.doc.data
+    yamlString = switch typeof @props.card.data
+      when 'object' then YAML.stringify @props.card.data
+      else @props.card.data
 
     if @props.selected
       content = @props.children
@@ -195,9 +195,9 @@ Doc = React.createClass
       )
 
     (div
-      className: 'doc'
+      className: 'card'
     ,
-      (h4 {onClick: @handleClick}, @props.doc._id)
+      (h4 {onClick: @handleClick}, @props.card._id)
       content
     )
 
@@ -207,15 +207,15 @@ Editing = React.createClass
     textareaSize: 100
 
   componentWillMount: ->
-    if @props.docid
-      @loadDoc @props.docid
+    if @props.cardid
+      @loadCard @props.cardid
 
-  loadDoc: (docid) ->
-    store.getWithRefs(docid).then (result) =>
-      {doc, referred, referring} = result
-      yamlString = if typeof doc.data is 'object' then YAML.stringify doc.data else doc.data
+  loadCard: (cardid) ->
+    cardStore.getWithRefs(cardid).then (result) =>
+      {card, referred, referring} = result
+      yamlString = if typeof card.data is 'object' then YAML.stringify card.data else card.data
       @setState
-        doc: doc
+        card: card
         referred: referred
         referring: referring
         yamlString: yamlString
@@ -223,47 +223,47 @@ Editing = React.createClass
   addReferredGroup: (e) ->
     e.preventDefault()
     groupName = cuid.slug()
-    doc = @state.doc or {}
-    doc.refs = {} unless doc.refs
-    unless doc.refs[groupName]
-      doc.refs[groupName] = {}
-      store.save(doc).then (res) =>
-        @loadDoc res.id
+    card = @state.card or {}
+    card.refs = {} unless card.refs
+    unless card.refs[groupName]
+      card.refs[groupName] = {}
+      cardStore.save(card).then (res) =>
+        @loadCard res.id
 
-  docDroppedAtGroup: (groupName, droppedDocId, e) ->
-    if @state.doc
-      doc = @state.doc
-      doc.refs[groupName][droppedDocId] = (new Date()).toISOString()
-      store.save(doc).then (res) =>
+  cardDroppedAtGroup: (groupName, droppedCardId, e) ->
+    if @state.card
+      card = @state.card
+      card.refs[groupName][droppedCardId] = (new Date()).toISOString()
+      cardStore.save(card).then (res) =>
         @props.afterSave res.id
-        @loadDoc res.id
+        @loadCard res.id
 
   save: (e) ->
     e.preventDefault()
-    doc = @state.doc or {}
+    card = @state.card or {}
     parsed = YAML.parse @state.yamlString
 
-    # special cases of doc data
-    doc.data = switch typeof parsed
+    # special cases of card data
+    card.data = switch typeof parsed
       when 'object' then parsed
       when 'string' then @state.yamlString
 
-    store.save(doc).then (res) =>
+    cardStore.save(card).then (res) =>
       @props.afterSave res.id
-      if @props.docid
-        @loadDoc res.id
+      if @props.cardid
+        @loadCard res.id
       else
         @replaceState {textAreaSize: 100}
 
   delete: (e) ->
     e.preventDefault()
-    if confirm 'Are you sure you want to delete ' + @state.doc._id + '?'
-      store.delete(@state.doc).then => @props.afterDelete()
+    if confirm 'Are you sure you want to delete ' + @state.card._id + '?'
+      cardStore.delete(@state.card).then => @props.afterDelete()
 
-  handleClickAddNewDoc: (e) ->
+  handleClickAddNewCard: (e) ->
     e.preventDefault()
     @setState
-      doc: {type: @props.type, data: {}}
+      card: {type: @props.type, data: {}}
       referred: {}
       referring: {}
       yamlString: ''
@@ -277,22 +277,22 @@ Editing = React.createClass
     if @props.onCancel
       @props.onCancel()
     else
-      @setState doc: null
+      @setState card: null
 
   render: ->
-    if not @state.doc and not @props.docid
+    if not @state.card and not @props.cardid
       return (button
         className: 'pure-button new-card'
-        onClick: @handleClickAddNewDoc
+        onClick: @handleClickAddNewCard
       , "create new #{@props.type} card")
 
-    else if @state.doc
+    else if @state.card
       textareaHeight = @state.yamlString.split('\n').length * 18
 
       return (div className: 'editing',
         (form className: 'pure-form pure-form-stacked',
           (fieldset className: 'main',
-            (h3 {}, if not @state.doc._id then "new #{@state.doc.type} card" else 'new')
+            (h3 {}, if not @state.card._id then "new #{@state.card.type} card" else 'new')
             (textarea
               value: @state.yamlString
               onChange: @handleChange
@@ -303,13 +303,13 @@ Editing = React.createClass
           (ReferredGroup
             key: groupName
             name: groupName
-            docsdata: @state.referred[groupName]
-            onDocDropped: @docDroppedAtGroup
-          ) for groupName of @state.doc.refs if @state.doc.refs
+            cardsdata: @state.referred[groupName]
+            onCardDropped: @cardDroppedAtGroup
+          ) for groupName of @state.card.refs if @state.card.refs
           (button
             className: 'pure-button add-referred'
             onClick: @addReferredGroup
-          , 'Add group of references') if @state.doc._id
+          , 'Add group of references') if @state.card._id
           (fieldset
             key: type
             className: 'referring'
@@ -317,8 +317,8 @@ Editing = React.createClass
             (h4 {}, type + ':')
             (pre {key: data.slice(0, 20) + data.slice(-20)},
               if typeof data is 'object' then YAML.stringify data else data
-            ) for data in docsdata
-          ) for type, docsdata of @state.referring
+            ) for data in cardsdata
+          ) for type, cardsdata of @state.referring
           (fieldset {},
             (button
               className: 'pure-button cancel'
@@ -327,7 +327,7 @@ Editing = React.createClass
             (button
               className: 'pure-button delete'
               onClick: @delete
-            , 'Delete') if @props.docid
+            , 'Delete') if @props.cardid
             (button
               className: 'pure-button save'
               onClick: @save
@@ -351,12 +351,12 @@ ReferredGroup = React.createClass
     @setState backgroundColor: ''
   drop: (e) ->
     e.stopPropagation()
-    draggedDocId = e.dataTransfer.getData 'docId'
-    @props.onDocDropped @props.name, draggedDocId
+    draggedCardId = e.dataTransfer.getData 'cardId'
+    @props.onCardDropped @props.name, draggedCardId
     @setState backgroundColor: ''
 
   render: ->
-    docsdata = @props.docsdata or []
+    cardsdata = @props.cardsdata or []
 
     (fieldset
       className: 'referred'
@@ -370,15 +370,15 @@ ReferredGroup = React.createClass
       (h4 {}, @props.name + ':')
       (pre {key: data.slice(0, 20) + data.slice(-20)},
         if typeof data is 'object' then YAML.stringify data else data
-      ) for data in docsdata
-      (span {}, 'drop a card here') if not docsdata.length
+      ) for data in cardsdata
+      (span {}, 'drop a card here') if not cardsdata.length
     )
 
 Main = React.createClass
   displayName: 'Main'
   reset: (e) ->
     e.preventDefault()
-    store.reset().then(location.reload)
+    cardStore.reset().then(location.reload)
 
   render: ->
     (div {id: 'main'},
