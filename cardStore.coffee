@@ -1,6 +1,5 @@
 PouchDB = require './pouchdb'
-Promise = require 'lie'
-R = require 'ramda'
+parallel = require 'run-parallel'
 cuid = require 'cuid'
 
 getRefs = (card) ->
@@ -28,17 +27,10 @@ class Store
           }"""
           reduce: '_count'
 
-    @pouch.put
-      _id: '_design/types'
-      views:
-        'types':
-          map: ((card) -> emit [card.type, card._id]).toString()
-          reduce: '_count'
-
   reset: ->
     @pouch.destroy()
 
-  save: (card) ->
+  save: (card, cb) ->
     card._id = cuid() if not card._id
     card.type = cuid.slug() if not card._id
     if card._rev
@@ -46,74 +38,61 @@ class Store
     else
       card.created = (new Date()).toISOString()
 
-    @pouch.put card
+    @pouch.put card, cb
 
-  delete: (card) ->
-    @pouch.remove card
+  delete: (card, cb) ->
+    @pouch.remove card, cb
 
-  get: (id) ->
-    @pouch.get(id)
+  get: (id, cb) -> @pouch.get id, cb
 
-  getWithRefs: (id) ->
-    return new Promise (resolve, reject) =>
-      promises = []
-      @pouch.get(id).catch((x) -> console.log x).then (card) =>
+  getWithRefs: (id, cb) ->
+    @pouch.get id, (err, card) =>
+      return cb err if err
 
-        # get cards referred by this
-        refsList = getRefs card
+      parallel [
+        ((callback) =>
+          # get cards referred by this
+          refsList = getRefs card
+          @pouch.allDocs
+            include_docs: true
+            keys: (ref[1] for ref in refsList)
+          , (err, res) ->
+            return callback err if err
 
-        referred = @pouch.allDocs(
-          include_docs: true
-          keys: (ref[1] for ref in refsList)
-        ).catch((x) -> console.log x).then (res) =>
+            fetched = {}
+            for row in res.rows
+              fetched[row.id] = row.doc.data
 
-          fetched = {}
-          for row in res.rows
-            fetched[row.id] = row.doc.data
+            referred = {}
+            for ref in refsList
+              group = ref[0]
+              id = ref[1]
+              referred[group] = referred[group] or []
+              referred[group].push fetched[id]
+            callback null, referred
 
-          result = {}
-          for ref in refsList
-            group = ref[0]
-            id = ref[1]
-            result[group] = result[group] or []
-            result[group].push fetched[id]
-          return result
+        ), ((callback) =>
+          # get cards referring this
+          @pouch.query 'refs',
+            descending: true
+            include_docs: true
+            startkey: [id, {}]
+            endkey: [id]
+            reduce: false
+          , (err, res) ->
+            return callback err if err
 
-        promises.push referred
-
-        # get cards referring this
-        referring = @pouch.query('refs',
-          descending: true
-          include_docs: true
-          startkey: [id, {}]
-          endkey: [id]
-          reduce: false
-        ).catch((x) -> console.log x).then (res) =>
-          result = {}
-          for row in res.rows
-            result['@' + row.key[1]] = result['@' + row.key[1]] or []
-            result['@' + row.key[1]].push row.doc.data
-          return result
-
-        promises.push referring
-
-        # when the two steps are complete, resolve
-        Promise.all(promises).catch((x) -> console.log x).then (refs) ->
-          resolve
-            card: card
-            referred: refs[0]
-            referring: refs[1]
-
-  listTypes: ->
-    return new Promise (resolve, reject) =>
-      @pouch.query('types',
-        include_docs: true
-        descending: true
-        reduce: false
-      ).catch((x) -> console.log x).then (res) ->
-        typeFromRow = R.compose R.head, R.get('key')
-        typeGroupFromRows = (rows) -> {name: typeFromRow(rows[0]), cards: R.map(R.get('doc'), rows)}
-        typeGroupList = R.values R.mapObj typeGroupFromRows, R.groupBy(typeFromRow, res.rows)
-        resolve typeGroupList
+            referring = {}
+            for row in res.rows
+              referring['@' + row.key[1]] = referring['@' + row.key[1]] or []
+              referring['@' + row.key[1]].push row.doc.data
+            callback null, referring
+        )
+      ], (err, refs) =>
+        return cb err if err
+        cb null,
+          card: card
+          referred: refs[0]
+          referring: refs[1]
 
 module.exports = Store
