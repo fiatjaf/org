@@ -1,55 +1,27 @@
+EventEmitter = require 'wolfy-eventemitter'
 PouchDB = require './pouchdb'
 Promise = require 'lie'
-R = require 'ramda'
-cuid = require 'cuid'
 
-getRefs = (card) ->
-  refs = []
-  for k, v of card.refs
-    for subv, date of v
-      refs.push [k, subv, date]
-  return refs
-
-class Store
+class Store extends EventEmitter.EventEmitter
   constructor: (name='main') ->
     @pouch = new PouchDB(name)
     @pouch.put
-      _id: '_design/refs'
-      views:
-        'refs':
-          map: """function (card) {
-            var getRefs = #{getRefs.toString()}
-            getRefs(card).forEach( function (ref) {
-              var k = ref[0];
-              var v = ref[1];
-              var date = ref[2];
-              emit([v, k, card.type, date]);
-            })
-          }"""
-          reduce: '_count'
-
-    @pouch.put
-      _id: '_design/types'
-      views:
-        'types':
-          map: ((card) -> emit [card.type, card._id]).toString()
-          reduce: '_count'
+      _id: '_design/pasargada'
+      views: require './views'
 
   reset: ->
-    @pouch.destroy()
+    @pouch.destroy => @emit 'CHANGE'
 
   save: (card) ->
-    card._id = cuid() if not card._id
-    card.type = cuid.slug() if not card._id
     if card._rev
-      card.edited = (new Date()).toISOString()
+      card.edition = (new Date()).toISOString()
     else
-      card.created = (new Date()).toISOString()
+      card.creation = (new Date()).toISOString()
 
-    @pouch.put card
+    @pouch.put card, => @emit 'CHANGE'
 
   delete: (card) ->
-    @pouch.remove card
+    @pouch.remove card, => @emit 'CHANGE'
 
   get: (id) ->
     @pouch.get(id)
@@ -60,41 +32,33 @@ class Store
       @pouch.get(id).catch((x) -> console.log x).then (card) =>
 
         # get cards referred by this
-        refsList = getRefs card
-
-        referred = @pouch.allDocs(
+        referred = @pouch.query('pasargada/refs',
+          startkey: ['->', id, {}]
+          endkey: ['->', id, null]
+          descending: true
           include_docs: true
-          keys: (ref[1] for ref in refsList)
-        ).catch((x) -> console.log x).then (res) =>
-
-          fetched = {}
+          reduce: false
+        ).catch((x) -> console.log x).then (res) ->
+          groups = {}
           for row in res.rows
-            fetched[row.id] = row.doc.data
-
-          result = {}
-          for ref in refsList
-            group = ref[0]
-            id = ref[1]
-            result[group] = result[group] or []
-            result[group].push fetched[id]
-          return result
-
+            groups[row.key[2]] = groups[row.key[2]] or []
+            groups[row.key[2]].push row.doc
+          return groups
         promises.push referred
 
         # get cards referring this
-        referring = @pouch.query('refs',
+        referring = @pouch.query('pasargada/refs',
+          startkey: ['<-', id, {}]
+          endkey: ['<-', id, null]
           descending: true
           include_docs: true
-          startkey: [id, {}]
-          endkey: [id]
           reduce: false
-        ).catch((x) -> console.log x).then (res) =>
-          result = {}
+        ).catch((x) -> console.log x).then (res) ->
+          groups = {}
           for row in res.rows
-            result['@' + row.key[1]] = result['@' + row.key[1]] or []
-            result['@' + row.key[1]].push row.doc.data
-          return result
-
+            groups[row.key[2]] = groups[row.key[2]] or []
+            groups[row.key[2]].push row.doc
+          return groups
         promises.push referring
 
         # when the two steps are complete, resolve
@@ -104,16 +68,15 @@ class Store
             referred: refs[0]
             referring: refs[1]
 
-  listTypes: ->
-    return new Promise (resolve, reject) =>
-      @pouch.query('types',
+  allCards: (cb) ->
+    return new Promise (resolve, reject) ->
+      @pouch.query('pasargada/types'
         include_docs: true
-        descending: true
-        reduce: false
       ).catch((x) -> console.log x).then (res) ->
-        typeFromRow = R.compose R.head, R.get('key')
-        typeGroupFromRows = (rows) -> {name: typeFromRow(rows[0]), cards: R.map(R.get('doc'), rows)}
-        typeGroupList = R.values R.mapObj typeGroupFromRows, R.groupBy(typeFromRow, res.rows)
-        resolve typeGroupList
+        groups = {}
+        for row in res.rows
+          groups[row.key[1]] = groups[row.key[1]] or []
+          groups[row.key[1]].push row.doc
+        return groups
 
 module.exports = Store
