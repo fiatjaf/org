@@ -1,6 +1,6 @@
-EventEmitter = require 'wolfy-eventemitter'
+EventEmitter = require 'event-emitter'
 
-class Dispatcher extends EventEmitter.EventEmitter
+class Dispatcher
   construct: ->
 
-module.exports = Dispatcher
+module.exports = EventEmitter(new Dispatcher())

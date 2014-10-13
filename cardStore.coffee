@@ -1,8 +1,8 @@
-EventEmitter = require 'wolfy-eventemitter'
+EventEmitter = require 'event-emitter'
 PouchDB = require './pouchdb'
 Promise = require 'lie'
 
-class Store extends EventEmitter.EventEmitter
+class Store
   constructor: (name='main') ->
     @pouch = new PouchDB(name)
     @pouch.put
@@ -15,10 +15,12 @@ class Store extends EventEmitter.EventEmitter
   save: (card) ->
     if card._rev
       card.edition = (new Date()).toISOString()
+      r = @pouch.put card
     else
       card.creation = (new Date()).toISOString()
+      r = @pouch.post card
 
-    @pouch.put card, => @emit 'CHANGE'
+    r.then => @emit 'CHANGE'
 
   delete: (card) ->
     @pouch.remove card, => @emit 'CHANGE'
@@ -69,14 +71,14 @@ class Store extends EventEmitter.EventEmitter
             referring: refs[1]
 
   allCards: (cb) ->
-    return new Promise (resolve, reject) ->
+    return new Promise (resolve, reject) =>
       @pouch.query('pasargada/types'
         include_docs: true
       ).catch((x) -> console.log x).then (res) ->
         groups = {}
         for row in res.rows
-          groups[row.key[1]] = groups[row.key[1]] or []
-          groups[row.key[1]].push row.doc
-        return groups
+          groups[row.key[0]] = groups[row.key[0]] or []
+          groups[row.key[0]].push row.doc
+        resolve groups
 
-module.exports = Store
+module.exports = EventEmitter(new Store())

@@ -1,12 +1,6 @@
-cuid           = require 'cuid'
-YAML           = {}
-YAML.parse     = require('js-yaml').safeLoad
-YAML.stringify = require('prettyaml').stringify
-CardStore      = require './cardStore.coffee'
-Dispatcher     = require './dispatcher.coffee'
-
-cardStore = new CardStore
-dispatcher = new Dispatcher
+YAML           = require './yaml.coffee'
+cardStore      = require './cardStore.coffee'
+dispatcher     = require './dispatcher.coffee'
 
 {div, span, pre,
  small, i, p, a, button,
@@ -35,6 +29,10 @@ Board = React.createClass
     cardStore.get(e.dataTransfer.getData 'cardId').then (draggedCard) =>
       draggedCard.type = listName
       cardStore.save(draggedCard)
+
+  addCard: ->
+    type = prompt 'Which type?'
+    cardStore.save({type: type})
 
   i: 0 # trello-like scrolling
   dragStart: (e) ->
@@ -89,9 +87,13 @@ Board = React.createClass
         (div className: 'card',
           (Editing
             type: type
+            template: @templates[type] if @templates
           )
         )
       ) for type, cards of @state.cardsByType
+      (button
+        onClick: @addCard
+      , 'Add card')
       (View cardid: @state.viewingCardId)
     )
 
@@ -149,7 +151,7 @@ Card = React.createClass
   dragEnd: -> dispatcher.emit 'card.dragend'
 
   render: ->
-    yamlString = YAML.stringify @props.card
+    yamlString = YAML.stringifyCard @props.card
 
     if @props.editing
       content = @props.children
@@ -214,21 +216,13 @@ Editing = React.createClass
 
   loadCard: (cardid) ->
     cardStore.get(cardid).then (card) =>
-      yamlString = YAML.stringify card
       @setState
         card: card
-        yamlString: yamlString
+        yamlString: YAML.stringifyCard card
 
   save: (e) ->
     e.preventDefault()
-    card = @state.card or {}
-    parsed = YAML.parse @state.yamlString
-
-    # special cases of card data
-    card.data = switch typeof parsed
-      when 'object' then parsed
-      when 'string' then @state.yamlString
-
+    card = YAML.parseCard @state.yamlString, @state.card
     cardStore.save(card)
 
   delete: (e) ->
@@ -239,12 +233,12 @@ Editing = React.createClass
   handleClickAddNewCard: (e) ->
     e.preventDefault()
 
-    card = @props.templates[@props.type] or {}
-    card.type @props.type
+    card = @props.template or {type: @props.type}
+    card.type = @props.type
 
     @setState
       card: card
-      yamlString: YAML.stringify card
+      yamlString: YAML.stringifyCard card
 
   handleChange: (e) ->
     @setState
@@ -309,7 +303,7 @@ Main = React.createClass
         className: 'pure-button'
         onClick: @reset
       , 'RESET')
-      Board()
+      (Board {})
     )
 
 React.renderComponent Main(), document.body
