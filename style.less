@@ -154,3 +154,46 @@ h3 {
   }
 
 }
+
+.view {
+  &.overlay {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    top: 0;
+    right: 0;
+    z-index: 100;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    background: rgba(0, 0, 0, 0.7);
+  }
+
+  & > * {
+    float: left;
+    margin-top: 100px;
+
+    pre { border: 3px solid #FFF; padding: 10px; }
+  }
+
+  h4 {
+    text-align: center;
+  }
+
+  .referring {
+    width: 28%;
+    margin-left: 5%;
+    margin-right: 1%;
+  }
+
+  .focus {
+    width: 30%;
+    margin-left: 1%; 
+    margin-right: 1%; 
+  }
+
+  .referred {
+    width: 28%;
+    margin-right: 5%;
+    margin-left: 1%;
+  }
+}

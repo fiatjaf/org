@@ -2,6 +2,8 @@ EventEmitter = require 'event-emitter'
 PouchDB = require './pouchdb'
 Promise = require 'lie'
 
+findUUIDs = require './find-uuids.js'
+
 class Store
   constructor: (name='main') ->
     @pouch = new PouchDB(name)
@@ -30,45 +32,44 @@ class Store
 
   getWithRefs: (id) ->
     return new Promise (resolve, reject) =>
-      promises = []
-      @pouch.get(id).catch((x) -> console.log x).then (card) =>
+      # get this and cards referring this
+      referred = @pouch.query('pasargada/refs',
+        startkey: [id, {}]
+        endkey: [id, null]
+        descending: true
+        include_docs: true
+        reduce: false
+      ).catch((x) => console.log x).then (res) =>
+        card = res.rows[0].doc
+
+        referring = {}
+        for row in res.rows.slice(1)
+          referring[row.key[1]] = referring[row.key[1]] or []
+          referring[row.key[1]].push row.doc
 
         # get cards referred by this
-        referred = @pouch.query('pasargada/refs',
-          startkey: ['->', id, {}]
-          endkey: ['->', id, null]
-          descending: true
+        refs = findUUIDs card, card.type
+        ids = []
+        fields = []
+        for ref in refs
+          continue if ref[1] == card._id
+
+          fields.push ref[0]
+          ids.push ref[1]
+        @pouch.allDocs(
+          keys: ids
           include_docs: true
           reduce: false
         ).catch((x) -> console.log x).then (res) ->
-          groups = {}
-          for row in res.rows
-            groups[row.key[2]] = groups[row.key[2]] or []
-            groups[row.key[2]].push row.doc
-          return groups
-        promises.push referred
+          referred = {}
+          for row, i in res.rows
+            referred[fields[i]] = referred[fields[i]] or []
+            referred[fields[i]].push row.doc
 
-        # get cards referring this
-        referring = @pouch.query('pasargada/refs',
-          startkey: ['<-', id, {}]
-          endkey: ['<-', id, null]
-          descending: true
-          include_docs: true
-          reduce: false
-        ).catch((x) -> console.log x).then (res) ->
-          groups = {}
-          for row in res.rows
-            groups[row.key[2]] = groups[row.key[2]] or []
-            groups[row.key[2]].push row.doc
-          return groups
-        promises.push referring
-
-        # when the two steps are complete, resolve
-        Promise.all(promises).catch((x) -> console.log x).then (refs) ->
           resolve
             card: card
-            referred: refs[0]
-            referring: refs[1]
+            referring: referring
+            referred: referred
 
   allCards: (cb) ->
     return new Promise (resolve, reject) =>

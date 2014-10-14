@@ -21,19 +21,6 @@ Board = React.createClass
   componentWillUnmount: -> cardStore.off 'CHANGE', @fetchCards
   fetchCards: -> cardStore.allCards().then (cardsByType) => @setState cardsByType: cardsByType
 
-  handleViewCard: (cardid) -> @setState viewingCardId: cardid
-  handleEditCard: (cardid) -> @setState editingCardId: cardid
-  handleCancelEdit: -> @setState editingCardId: null
-
-  handleCardDropped: (listName, e) ->
-    cardStore.get(e.dataTransfer.getData 'cardId').then (draggedCard) =>
-      draggedCard.type = listName
-      cardStore.save(draggedCard)
-
-  addCard: ->
-    type = prompt 'Which type?'
-    cardStore.save({type: type})
-
   i: 0 # trello-like scrolling
   dragStart: (e) ->
     if e.target == @getDOMNode()
@@ -74,14 +61,14 @@ Board = React.createClass
       ,
         (Card
           editing: (@state.editingCardId == card._id)
-          onView: @handleViewCard.bind @, card._id
-          onEdit: @handleEditCard.bind @, card._id
+          onView: @viewCard.bind @, card._id
+          onEdit: @editCard.bind @, card._id
           card: card,
           key: card._id
         ,
           (Editing
             cardid: card._id
-            onCancel: @handleCancelEdit
+            onCancel: @editCard.bind @, null
           )
         ) for card in cards
         (div className: 'card',
@@ -94,8 +81,25 @@ Board = React.createClass
       (button
         onClick: @addCard
       , 'Add card')
-      (View cardid: @state.viewingCardId)
+      (View
+        cardid: @state.viewingCardId
+        onStopViewing: @viewCard.bind @, null
+        onView: @viewCard
+      ) if @state.viewingCardId
     )
+
+  viewCard: (cardid) -> @setState viewingCardId: cardid
+  editCard: (cardid) -> @setState editingCardId: cardid
+
+  handleCardDropped: (listName, e) ->
+    cardStore.get(e.dataTransfer.getData 'cardId').then (draggedCard) =>
+      draggedCard.type = listName
+      cardStore.save(draggedCard)
+
+  addCard: ->
+    type = prompt 'Which type?'
+    cardStore.save({type: type})
+
 
 List = React.createClass
   displayName: 'List'
@@ -184,7 +188,7 @@ View = React.createClass
     referred: {}
     referring: {}
 
-  loadCard: (cardid) ->
+  loadCard: ->
     cardStore.getWithRefs(@props.cardid).then (result) =>
       {card, referred, referring} = result
       @setState
@@ -192,18 +196,48 @@ View = React.createClass
         referred: referred
         referring: referring
 
+  componentDidMount: -> @loadCard()
+  componentDidUpdate: (prevProps) ->
+    if @props.cardid != prevProps.cardid
+        @loadCard()
+
   render: ->
-    (div className: 'overlay',
+    (div
+      onClick: @props.onStopViewing
+      className: 'view overlay',
+    ,
       (div className: 'referring',
-
+        (div {},
+          (h3 {}, at)
+          (pre
+            key: card._id
+            onClick: @jumpToCard.bind @, card._id
+          , YAML.stringifyCard card) for card in cards
+        ) for at, cards of @state.referring
       )
-      (div className: 'card',
-
+      (div className: 'focus',
+        (div onClick: @nothing,
+          (pre {}, YAML.stringifyCard @state.card)
+        )
       )
       (div className: 'referred',
-
+        (div {},
+          (h3 {}, at)
+          (pre
+            key: card._id
+            onClick: @jumpToCard.bind @, card._id
+          , YAML.stringifyCard card) for card in cards
+        ) for at, cards of @state.referred
       )
     )
+
+  jumpToCard: (id, e) ->
+    @nothing e
+    @props.onView id
+
+  nothing: (e) ->
+    e.preventDefault()
+    e.stopPropagation()
 
 Editing = React.createClass
   displayName: 'Editing'
