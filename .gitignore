@@ -1,5 +1,9 @@
 node_modules
+LICENSE
+find-uuids.js
+pouch.js
 *.swo
 *.swp
-main.js
-assets/style.css
+*.coffee
+style.less
+package.json
