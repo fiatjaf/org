@@ -1,5 +1,7 @@
 node_modules
 *.swo
 *.swp
-main.js
-assets/style.css
+*.js
+*.css
+browserify-cache.json
+.shastore

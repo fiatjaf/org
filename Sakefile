@@ -1,0 +1,18 @@
+app:
+  help: the app
+  js:
+    help: the javascript
+    dependencies:
+      - '*.coffee'
+    output:
+      - assets/bundle.js
+    formula: >
+      ./node_modules/.bin/browserifyinc -t coffeeify --extension='.coffee' app.coffee > assets/bundle.js
+  css:
+    help: the less file to css
+    dependencies:
+      - style.less
+    output:
+      - assets/style.css
+    formula: >
+      ./node_modules/.bin/lessc style.less > assets/bundle.css
